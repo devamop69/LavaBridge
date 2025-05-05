@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Lavalink Proxy - Connection Status</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
     <style>
         .data-badge {
@@ -86,12 +87,63 @@
             border-radius: 4px;
             min-width: 110px;
         }
+        .logo {
+            height: 40px;
+            margin-right: 10px;
+        }
+        .connection-url-card {
+            background: linear-gradient(135deg, #6f42c1, #20c997);
+            color: white;
+            margin-bottom: 20px;
+        }
+        .url-display {
+            background-color: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            padding: 10px 15px;
+            font-family: 'Consolas', monospace;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+        .url-display-text {
+            margin: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .copy-btn {
+            background-color: rgba(255, 255, 255, 0.2);
+            border: none;
+            color: white;
+            border-radius: 4px;
+            padding: 0.25rem 0.5rem;
+            transition: all 0.2s ease;
+        }
+        .copy-btn:hover {
+            background-color: rgba(255, 255, 255, 0.3);
+        }
+        .stats-row {
+            margin-top: 10px;
+        }
+        .glass-card {
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
+        }
+        .brand-container {
+            display: flex;
+            align-items: center;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Lavalink Proxy</h1>
+            <div class="brand-container">
+                <img src="/DevamOP.png" alt="DevamOP Logo" class="logo">
+                <h1>Lavalink Proxy</h1>
+            </div>
             <nav>
                 <ul>
                     <li><a href="/" class="active">Dashboard</a></li>
@@ -112,6 +164,43 @@
             </div>
         </header>
 
+        <!-- Connection URL Display -->
+        <div class="card connection-url-card">
+            <div class="card-body">
+                <h5 class="card-title"><i class="fas fa-link me-2"></i>Connection Information</h5>
+                <p class="text-white-50">Use this URL to connect to the Lavalink Proxy:</p>
+                <div class="url-display">
+                    <p id="connection-url" class="url-display-text">ws://loading:6923</p>
+                    <button id="copy-btn" class="copy-btn"><i class="fas fa-copy"></i></button>
+                </div>
+                <div class="row stats-row">
+                    <div class="col-md-4">
+                        <div class="glass-card p-3 text-center">
+                            <i class="fas fa-server mb-2"></i>
+                            <h6>Server</h6>
+                            <span id="server-address">loading...</span>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="glass-card p-3 text-center">
+                            <i class="fas fa-lock mb-2"></i>
+                            <h6>Password</h6>
+                            <div class="password-container">
+                                <span id="server-password">******</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="glass-card p-3 text-center">
+                            <i class="fas fa-plug mb-2"></i>
+                            <h6>Port</h6>
+                            <span id="server-port">loading...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <div class="row mb-4">
             <div class="col-md-4">
                 <div class="card text-center stats-card">
@@ -123,7 +212,7 @@
             </div>
             <div class="col-md-4">
                 <div class="card text-center stats-card">
-                    <div class="card-header bg-purple text-white" style="background-color: #6f42c1;">v3 Connections</div>
+                    <div class="card-header text-white" style="background-color: var(--v3-color);">v3 Connections</div>
                     <div class="card-body">
                         <div class="status-count" id="v3-connections">0</div>
                     </div>
@@ -131,7 +220,7 @@
             </div>
             <div class="col-md-4">
                 <div class="card text-center stats-card">
-                    <div class="card-header text-white" style="background-color: #20c997;">v4 Connections</div>
+                    <div class="card-header text-white" style="background-color: var(--v4-color);">v4 Connections</div>
                     <div class="card-body">
                         <div class="status-count" id="v4-connections">0</div>
                     </div>
@@ -188,7 +277,7 @@
         </div>
         
         <div class="footer">
-            <p>Lavalink Proxy - A TCP tunneling proxy for Lavalink v3 and v4 servers</p>
+            <p>Lavalink Proxy - A TCP tunneling proxy for Lavalink v3 and v4 servers | <a href="https://github.com/devamop69/LavaBridge" target="_blank">LavaBridge</a></p>
         </div>
     </div>
 
@@ -198,6 +287,59 @@
         let currentSortField = 'id';
         let currentSortOrder = 'asc';
         let currentRateFormat = 'bytes'; // Default rate format
+
+        // Fetch the proxy connection information
+        fetch('/api/connection-info')
+            .then(response => response.json())
+            .then(data => {
+                // Generate the WS connection URL
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss://' : 'ws://';
+                let connectionUrl;
+                
+                // Use publicUrl if available
+                if (data.publicUrl) {
+                    connectionUrl = `${wsProtocol}${data.publicUrl}`;
+                } else {
+                    // Fallback to auto-generated URL
+                    const serverAddress = data.host === '0.0.0.0' ? window.location.hostname : data.host;
+                    connectionUrl = `${wsProtocol}${serverAddress}:${data.port}`;
+                }
+
+                // Update the UI
+                document.getElementById('connection-url').textContent = connectionUrl;
+                document.getElementById('server-address').textContent = data.publicUrl || (data.host === '0.0.0.0' ? window.location.hostname : data.host);
+                document.getElementById('server-port').textContent = data.port;
+                
+                // Show password directly
+                document.getElementById('server-password').textContent = data.password;
+            })
+            .catch(error => {
+                console.error('Error fetching connection info:', error);
+                document.getElementById('connection-url').textContent = 'Failed to load connection information';
+            });
+
+        // Copy connection URL to clipboard
+        document.getElementById('copy-btn').addEventListener('click', function() {
+            const connectionUrl = document.getElementById('connection-url').textContent;
+            navigator.clipboard.writeText(connectionUrl)
+                .then(() => {
+                    // Change button icon temporarily to indicate success
+                    const button = this;
+                    const icon = button.querySelector('i');
+                    const originalClass = icon.className;
+                    
+                    icon.className = 'fas fa-check';
+                    button.classList.add('copied');
+                    
+                    setTimeout(() => {
+                        icon.className = originalClass;
+                        button.classList.remove('copied');
+                    }, 2000);
+                })
+                .catch(err => {
+                    console.error('Failed to copy:', err);
+                });
+        });
 
         // Format the date
         function formatDate(dateString) {
@@ -466,8 +608,8 @@
         // Initial update
         updateConnectionData();
         
-        // Set up auto-refresh every 0.5 seconds
-        setInterval(updateConnectionData, 500);
+        // Set up auto-refresh every 1 second
+        setInterval(updateConnectionData, 1000);
         
         // Set up manual refresh
         document.getElementById('refresh-btn').addEventListener('click', updateConnectionData);

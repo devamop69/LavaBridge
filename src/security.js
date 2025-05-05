@@ -25,6 +25,13 @@ let connectionAttempts = new Map();
 let securityViolations = new Map();
 let userAgents = new Map();
 
+// Flag to prevent recursive logging
+let isLogging = false;
+
+// Connection burst tracking (to detect potential DDoS)
+let connectionBursts = new Map();
+let lastConnectionTime = new Map();
+
 /**
  * Log security related events
  * @param {string} level - Log level (info, warn, error, debug)
@@ -32,25 +39,38 @@ let userAgents = new Map();
  * @param {Object} data - Additional data to log
  */
 function securityLog(level, message, data = {}) {
-  const timestamp = new Date().toISOString();
-  const logData = JSON.stringify(data);
-  const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message} ${logData}\n`;
-  
-  // Write to security log file
-  securityLogStream.write(logMessage);
-  
-  // Also log to console based on level
-  if (level === 'error' || level === 'warn') {
-    console.error(logMessage.trim());
-  } else if (config.logging.securityLevel === 'debug' || level === 'info') {
-    console.log(logMessage.trim());
+  // Prevent recursive logging
+  if (isLogging) {
+    console.error(`Prevented recursive security logging: ${message}`);
+    return;
   }
   
-  // Track security violations for potential automated responses
-  if (level === 'warn' || level === 'error') {
-    if (data.ip) {
-      recordSecurityViolation(data.ip, message);
+  isLogging = true;
+  
+  try {
+    const timestamp = new Date().toISOString();
+    const logData = JSON.stringify(data);
+    const logMessage = `[${timestamp}] [${level.toUpperCase()}] ${message} ${logData}\n`;
+    
+    // Write to security log file
+    securityLogStream.write(logMessage);
+    
+    // Also log to console based on level
+    if (level === 'error' || level === 'warn') {
+      console.error(logMessage.trim());
+    } else if (config.logging.securityLevel === 'debug' || level === 'info') {
+      console.log(logMessage.trim());
     }
+    
+    // Track security violations for potential automated responses
+    if ((level === 'warn' || level === 'error') && data.ip) {
+      // Don't call recordSecurityViolation from a blacklist operation to avoid circular calls
+      if (!message.includes('has been blacklisted')) {
+        recordSecurityViolation(data.ip, message);
+      }
+    }
+  } finally {
+    isLogging = false;
   }
 }
 
@@ -95,6 +115,12 @@ function recordSecurityViolation(ip, reason) {
  * @param {number} duration - Duration in milliseconds, or null for permanent
  */
 function blacklistIP(ip, reason, duration = null) {
+  // Check if IP is already blacklisted to avoid recursive operations
+  if (ipBlacklist.has(ip)) {
+    console.warn(`IP ${ip} is already blacklisted, skipping duplicate blacklist operation`);
+    return;
+  }
+  
   const expiresAt = duration ? new Date(Date.now() + duration) : null;
   
   ipBlacklist.set(ip, {
@@ -107,12 +133,19 @@ function blacklistIP(ip, reason, duration = null) {
   // Save blacklist to disk
   db.saveData(config.database.ipBlacklistDb, db.mapToObject(ipBlacklist));
   
-  securityLog('warn', `IP ${ip} has been blacklisted`, { 
+  // Log without triggering recordSecurityViolation again
+  const timestamp = new Date().toISOString();
+  const logData = JSON.stringify({ 
     ip, 
     reason, 
     expiresAt: expiresAt ? expiresAt.toISOString() : 'never',
     violations: securityViolations.has(ip) ? securityViolations.get(ip).count : 0
   });
+  const logMessage = `[${timestamp}] [WARN] IP ${ip} has been blacklisted ${logData}\n`;
+  
+  // Write directly to log file and console
+  securityLogStream.write(logMessage);
+  console.warn(logMessage.trim());
 }
 
 /**
@@ -271,6 +304,78 @@ function logHeaders(ip, headers) {
 }
 
 /**
+ * Track connection burst patterns
+ * @param {string} ip - IP address
+ * @returns {boolean} true if burst detected, false otherwise
+ */
+function trackConnectionBurst(ip) {
+  // Skip if DDoS protection is disabled
+  if (!config.security.ddosProtection || !config.security.ddosProtection.enabled) {
+    return false;
+  }
+  
+  const now = Date.now();
+  
+  // Initialize tracking for new IPs
+  if (!connectionBursts.has(ip)) {
+    connectionBursts.set(ip, {
+      burstCount: 0,
+      detectionTime: null
+    });
+  }
+  
+  if (!lastConnectionTime.has(ip)) {
+    lastConnectionTime.set(ip, now);
+    return false;
+  }
+  
+  const burst = connectionBursts.get(ip);
+  const lastTime = lastConnectionTime.get(ip);
+  const timeDiff = now - lastTime;
+  
+  // If connections come too fast, count as burst
+  if (timeDiff < config.security.ddosProtection.burstIntervalMs) {
+    burst.burstCount++;
+    
+    // If we've detected multiple bursts in short succession, consider it a potential attack
+    if (burst.burstCount > config.security.ddosProtection.burstThreshold) {
+      if (!burst.detectionTime) {
+        burst.detectionTime = now;
+        securityLog('warn', `Connection burst detected from IP ${ip}`, { 
+          ip, 
+          burstCount: burst.burstCount, 
+          timeBetweenConnections: timeDiff 
+        });
+      }
+      
+      // If sustained bursting, consider blacklisting
+      if (burst.burstCount > config.security.ddosProtection.burstBlacklistThreshold && config.security.autoBlacklist) {
+        blacklistIP(ip, `Automatic blacklist due to connection burst (${burst.burstCount} connections)`, 
+                  config.security.ddosProtection.temporaryBlockDuration || config.security.blacklistDuration);
+      }
+      
+      connectionBursts.set(ip, burst);
+      lastConnectionTime.set(ip, now);
+      return true;
+    }
+  } else {
+    // Reset burst counter if connections are spread out
+    if (timeDiff > 1000) {
+      burst.burstCount = Math.max(0, burst.burstCount - 1);
+      
+      // Clear detection after a longer period of normal behavior
+      if (timeDiff > config.security.ddosProtection.burstResetMs) {
+        burst.detectionTime = null;
+      }
+    }
+  }
+  
+  connectionBursts.set(ip, burst);
+  lastConnectionTime.set(ip, now);
+  return false;
+}
+
+/**
  * Clean up expired entries from various maps to prevent memory leaks
  */
 function cleanupExpiredData() {
@@ -300,6 +405,20 @@ function cleanupExpiredData() {
     }
   });
   
+  // Cleanup old connection bursts tracking (older than 10 minutes)
+  connectionBursts.forEach((burst, ip) => {
+    if (!burst.detectionTime || now - burst.detectionTime > 10 * 60 * 1000) {
+      connectionBursts.delete(ip);
+    }
+  });
+  
+  // Cleanup old connection times (older than 10 minutes)
+  lastConnectionTime.forEach((time, ip) => {
+    if (now - time > 10 * 60 * 1000) {
+      lastConnectionTime.delete(ip);
+    }
+  });
+  
   // Save blacklist to disk after cleanup
   db.saveData(config.database.ipBlacklistDb, db.mapToObject(ipBlacklist));
 }
@@ -317,6 +436,7 @@ module.exports = {
   trackUserAgent,
   checkSuspiciousDataRate,
   logHeaders,
+  trackConnectionBurst,
   getBlacklist: () => ipBlacklist,
   getSecurityViolations: () => securityViolations,
   getUserAgents: () => userAgents

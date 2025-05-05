@@ -17,6 +17,13 @@ A TCP tunneling proxy that routes clients to the appropriate Lavalink v3 or v4 s
 - Security monitoring with IP blacklisting
 - Search and sort functionality for connection tables
 - Multiple data rate display formats (bytes/s, bits/s, packets/s)
+- Modern UI with connection URL display and copy functionality
+- Enhanced DDoS protection:
+  - Connection burst detection
+  - Payload size limiting
+  - Automatic temporary blocking for suspicious behavior
+  - Recursive loop protection in security logging
+  - Configurable thresholds and limits
 
 ## How It Works
 
@@ -33,6 +40,9 @@ This proxy creates a direct TCP tunnel between clients and backend Lavalink serv
 6. Connection, data usage, and data rate statistics are tracked and displayed in the web interface
 7. Stats are persisted to JSON files for data retention between restarts
 8. Security module monitors for suspicious activities and enforces rate limiting
+9. DDoS protection detects and mitigates connection bursts and malicious patterns
+
+The proxy also supports the HAProxy PROXY protocol, allowing it to receive connections through a load balancer or reverse proxy while preserving the original client IP addresses.
 
 ## Requirements
 
@@ -59,6 +69,7 @@ This proxy creates a direct TCP tunnel between clients and backend Lavalink serv
    PROXY_PORT=6923
    WEB_PORT=6980
    PROXY_PASSWORD=DevamOP
+   ENABLE_PROXY_PROTOCOL=false
 
    # Backend server configuration
    LAVALINK_V3_HOST=192.168.1.72
@@ -92,6 +103,16 @@ This proxy creates a direct TCP tunnel between clients and backend Lavalink serv
    LOG_FULL_HEADERS=false
    SUSPICIOUS_DATA_RATE=10
    SECURITY_PASSWORD=AdminSecure123
+   
+   # DDoS protection configuration
+   DDOS_PROTECTION=true
+   BURST_THRESHOLD=5
+   BURST_BLACKLIST_THRESHOLD=15
+   BURST_INTERVAL_MS=200
+   BURST_RESET_MS=5000
+   TEMP_BLOCK_DURATION=300
+   MAX_PAYLOAD_SIZE=1
+   VALIDATE_WS_FRAMES=true
    ```
 
 ## Usage
@@ -120,6 +141,8 @@ This proxy creates a direct TCP tunnel between clients and backend Lavalink serv
 The proxy includes a web interface that provides real-time monitoring of:
 
 - **Connection Monitor** (`/`):
+  - Connection URL display with copy functionality
+  - Modern UI with DevamOP branding
   - Total active connections
   - Number of v3 and v4 connections
   - Detailed information for each connection
@@ -151,6 +174,7 @@ The proxy includes a web interface that provides real-time monitoring of:
   - Security violation monitoring
   - User agent tracking
   - Manual IP blacklisting controls
+  - Connection burst patterns visualization
 
 The web interface automatically refreshes every 5 seconds and can be manually refreshed as needed.
 
@@ -207,6 +231,7 @@ The proxy can be configured entirely through environment variables:
 - `PROXY_PORT`: Port for the proxy server (default: 6923)
 - `PROXY_PASSWORD`: Password for the proxy server (default: DevamOP)
 - `WEB_PORT`: Port for the web interface (default: 6980)
+- `ENABLE_PROXY_PROTOCOL`: Enable support for HAProxy PROXY protocol (default: false)
 
 ### Backend Settings
 - `LAVALINK_V3_HOST`: Hostname/IP for the Lavalink v3 server
@@ -239,6 +264,16 @@ The proxy can be configured entirely through environment variables:
 - `LOG_FULL_HEADERS`: Whether to log complete HTTP headers (default: false)
 - `SUSPICIOUS_DATA_RATE`: Threshold for suspicious data rate in MB/s (default: 10)
 - `SECURITY_PASSWORD`: Password for accessing the security dashboard (default: AdminSecure123)
+
+### DDoS Protection Settings
+- `DDOS_PROTECTION`: Enable DDoS protection features (default: true)
+- `BURST_THRESHOLD`: Number of rapid connections to consider a burst (default: 5)
+- `BURST_BLACKLIST_THRESHOLD`: Burst size to trigger automatic blacklisting (default: 15)
+- `BURST_INTERVAL_MS`: Time in ms to consider connections part of a burst (default: 200)
+- `BURST_RESET_MS`: Time in ms to reset burst counter after normal behavior (default: 5000)
+- `TEMP_BLOCK_DURATION`: Duration in seconds for temporary blocks (default: 300)
+- `MAX_PAYLOAD_SIZE`: Maximum payload size in MB (default: 1)
+- `VALIDATE_WS_FRAMES`: Validate WebSocket frames for protocol compliance (default: true)
 
 ## How Version Detection Works
 
@@ -293,6 +328,13 @@ The proxy includes comprehensive security features:
 - Password-protected security dashboard
 - Blacklist management with temporary or permanent bans
 - Detailed security logging
+- DDoS protection mechanisms:
+  - Connection burst detection and mitigation
+  - Automatic temporary blocking for suspicious patterns
+  - Payload size limiting to prevent resource exhaustion
+  - Recursive logging protection to prevent stack overflows
+  - Configurable thresholds for different attack vectors
+  - Optimized memory usage for tracking data
 
 ## UI Features
 
@@ -307,6 +349,9 @@ The web interface includes various user experience enhancements:
 - Visual indicators for important metrics
 - Responsive design for desktop and mobile
 - Multiple data rate display options
+- Connection URL display with one-click copy feature
+- Modern glass UI elements with gradient colors
+- Animated hover effects for interactive elements
 
 ## License
 

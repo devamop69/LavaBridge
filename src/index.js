@@ -512,9 +512,36 @@ app.get('/data-usage', (req, res) => {
 // Add a link to the health page
 app.get('/api/version', (req, res) => {
   res.json({
-    version: require('../package.json').version,
-    name: require('../package.json').name,
-    description: require('../package.json').description
+    version: '1.0.0',
+    name: 'Lavalink Proxy',
+    description: 'A TCP tunneling proxy for Lavalink v3 and v4 servers'
+  });
+});
+
+// Add connection information endpoint for the frontend
+app.get('/api/connection-info', (req, res) => {
+  const host = config.proxy.host;
+  const port = config.proxy.port;
+  // Include the actual password
+  const password = config.proxy.password;
+  const passwordLength = password.length;
+  
+  // Get the public URL if configured, otherwise generate from host
+  let publicUrl = config.proxy.publicUrl;
+  
+  // If no public URL is configured, generate one based on request
+  if (!publicUrl) {
+    // If binding to all interfaces (0.0.0.0), use the incoming request's host
+    const serverHost = host === '0.0.0.0' ? req.headers.host.split(':')[0] : host;
+    publicUrl = `${serverHost}:${port}`;
+  }
+  
+  res.json({
+    host,
+    port,
+    publicUrl,
+    passwordLength,
+    password
   });
 });
 
@@ -667,6 +694,13 @@ const server = net.createServer((clientSocket) => {
   log(`New connection from ${clientAddress} (ID: ${clientId})`);
   security.securityLog('info', `New connection`, { ip: clientIp, id: clientId });
   
+  // Check for connection bursts (potential DDoS)
+  if (security.trackConnectionBurst(clientIp)) {
+    security.securityLog('warn', `Rejected connection due to burst pattern detection`, { ip: clientIp, id: clientId });
+    clientSocket.end();
+    return;
+  }
+  
   // Function to parse PROXY protocol header
   // PROXY protocol format: "PROXY" + TCP4/TCP6 + client-ip + proxy-ip + client-port + proxy-port + CRLF
   function parseProxyProtocol(data) {
@@ -815,6 +849,23 @@ const server = net.createServer((clientSocket) => {
     // Track bytes from client
     bytesFromClient += data.length;
     updateIpDataUsage(clientIp, data.length, 0);
+    
+    // Check payload size limits
+    if (config.security.ddosProtection && config.security.ddosProtection.enabled) {
+      const maxSize = config.security.ddosProtection.maxPayloadSize;
+      if (buffer.length + data.length > maxSize) {
+        security.securityLog('warn', `Payload size exceeded for IP ${clientIp}`, { 
+          ip: clientIp, 
+          id: clientId,
+          size: buffer.length + data.length,
+          maxSize: maxSize
+        });
+        
+        // Close the connection
+        clientSocket.end();
+        return;
+      }
+    }
     
     // If connection details exist, update the bytesIn counter and check for suspicious data rates
     if (connectionDetails.has(clientId)) {

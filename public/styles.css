@@ -1,17 +1,44 @@
 :root {
-    /* Light theme variables */
-    --bg-color: #f8f9fa;
-    --text-color: #212529;
-    --text-muted: #6c757d;
-    --border-color: #e9ecef;
-    --card-bg: #ffffff;
-    --card-header: #f8f9fa;
-    --hover-bg: #f0f0f0;
-    --table-stripe: rgba(0, 0, 0, 0.02);
-    --shadow-color: rgba(0, 0, 0, 0.1);
-    --nav-hover: #f0f0f0;
-    --input-bg: #ffffff;
-    --input-border: #ced4da;
+    /* Dark theme variables */
+    --bg-color: #1a1d21;
+    --text-color: #e9ecef;
+    --text-muted: #adb5bd;
+    --border-color: #343a40;
+    --card-bg: #212529;
+    --card-header: #343a40;
+    --hover-bg: #2b3035;
+    --table-stripe: rgba(255, 255, 255, 0.02);
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --nav-hover: #2b3035;
+    --input-bg: #2b3035;
+    --input-border: #495057;
+    --gradient-start: #6f42c1;
+    --gradient-end: #20c997;
+    --v3-color: #6f42c1;
+    --v4-color: #20c997;
+    --primary-color: #0d6efd;
+    --success-color: #28a745;
+}
+
+/* Badge tweaks for dark theme */
+.badge-in {
+    background-color: rgba(13, 110, 253, 0.2);
+}
+
+.badge-out {
+    background-color: rgba(32, 201, 151, 0.2);
+}
+
+.connection-url-card {
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+}
+
+.glass-card {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.glass-card:hover {
+    background: rgba(255, 255, 255, 0.12);
 }
 
 body {
@@ -68,7 +95,7 @@ nav ul li a:hover {
 
 nav ul li a.active {
     color: #fff;
-    background-color: #0d6efd;
+    background-color: var(--primary-color);
 }
 
 .card {
@@ -107,11 +134,11 @@ nav ul li a.active {
 }
 
 .badge-v3 {
-    background-color: #6f42c1;
+    background-color: var(--v3-color);
 }
 
 .badge-v4 {
-    background-color: #20c997;
+    background-color: var(--v4-color);
 }
 
 .status-count {
@@ -182,6 +209,121 @@ nav ul li a.active {
     100% { transform: rotate(360deg); }
 }
 
+/* Connection URL Card */
+.connection-url-card {
+    background: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
+    color: white;
+    border: none;
+    margin-bottom: 20px;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+    transition: all 0.3s ease;
+}
+
+.connection-url-card:hover {
+    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px);
+}
+
+.connection-url-card .card-title {
+    font-weight: 600;
+    font-size: 1.25rem;
+    margin-bottom: 15px;
+}
+
+.url-display {
+    background-color: rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+    padding: 10px 15px;
+    font-family: 'Consolas', monospace;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 15px;
+}
+
+.url-display-text {
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.copy-btn {
+    background-color: rgba(255, 255, 255, 0.2);
+    border: none;
+    color: white;
+    border-radius: 4px;
+    padding: 0.25rem 0.5rem;
+    transition: all 0.2s ease;
+    cursor: pointer;
+}
+
+.copy-btn:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+.copy-btn.copied {
+    background-color: rgba(40, 167, 69, 0.4);
+}
+
+.glass-card {
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.15);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
+    padding: 15px;
+    transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-3px);
+}
+
+.glass-card h6 {
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+/* Password container */
+.password-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#toggle-password {
+    padding: 0.1rem 0.3rem;
+    font-size: 0.75rem;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+#toggle-password:hover {
+    background-color: rgba(255, 255, 255, 0.3);
+}
+
+/* Logo Styles */
+.logo {
+    height: 40px;
+    margin-right: 10px;
+    transition: transform 0.3s ease;
+}
+
+.brand-container:hover .logo {
+    transform: scale(1.05);
+}
+
+.brand-container {
+    display: flex;
+    align-items: center;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
     .status-count {
@@ -206,15 +348,30 @@ nav ul li a.active {
     nav ul {
         width: 100%;
     }
+
+    .url-display-text {
+        max-width: 200px;
+    }
+
+    .url-display {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .copy-btn {
+        margin-top: 10px;
+        text-align: center;
+    }
 }
 
 /* Stats cards */
 .stats-card {
-    transition: transform 0.2s ease-in-out;
+    transition: transform 0.2s ease-in-out, box-shadow 0.3s ease;
 }
 
 .stats-card:hover {
     transform: translateY(-5px);
+    box-shadow: 0 8px 15px rgba(0, 0, 0, 0.1);
 }
 
 /* Connection status indicators */
@@ -227,7 +384,8 @@ nav ul li a.active {
 }
 
 .status-online {
-    background-color: #28a745;
+    background-color: var(--success-color);
+    box-shadow: 0 0 5px rgba(40, 167, 69, 0.5);
 }
 
 .connection-time {
@@ -243,4 +401,14 @@ nav ul li a.active {
     border-top: 1px solid var(--border-color);
     color: var(--text-muted);
     font-size: 0.85rem;
+}
+
+.footer a {
+    color: var(--gradient-start);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.footer a:hover {
+    color: var(--gradient-end);
 } 

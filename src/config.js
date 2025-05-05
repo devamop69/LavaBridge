@@ -6,6 +6,7 @@ const config = {
   proxy: {
     host: process.env.PROXY_HOST || '0.0.0.0',
     port: parseInt(process.env.PROXY_PORT || '6923', 10),
+    publicUrl: process.env.PUBLIC_URL || '',
     webPort: parseInt(process.env.WEB_PORT || '6980', 10),
     password: process.env.PROXY_PASSWORD || 'DevamOP',
     enableProxyProtocol: process.env.ENABLE_PROXY_PROTOCOL === 'true' || false,
@@ -69,7 +70,19 @@ const config = {
     blockUnknownUserAgents: process.env.BLOCK_UNKNOWN_USER_AGENTS === 'true' || false,
     logFullHeaders: process.env.LOG_FULL_HEADERS === 'true' || false,
     suspiciousDataRateThreshold: parseInt(process.env.SUSPICIOUS_DATA_RATE || '10', 10) * 1024 * 1024, // 10 MB/s
-    securityPassword: process.env.SECURITY_PASSWORD || 'AdminSecure123' // Separate password for security dashboard
+    securityPassword: process.env.SECURITY_PASSWORD || 'AdminSecure123', // Separate password for security dashboard
+    
+    // DDoS protection settings
+    ddosProtection: {
+      enabled: process.env.DDOS_PROTECTION === 'true',
+      burstThreshold: parseInt(process.env.BURST_THRESHOLD || '5', 10), // Number of rapid connections to consider a burst
+      burstBlacklistThreshold: parseInt(process.env.BURST_BLACKLIST_THRESHOLD || '15', 10), // Burst size to trigger blacklist
+      burstIntervalMs: parseInt(process.env.BURST_INTERVAL_MS || '200', 10), // Time in ms to consider connections part of a burst
+      burstResetMs: parseInt(process.env.BURST_RESET_MS || '5000', 10), // Time in ms to reset burst counter after normal behavior
+      temporaryBlockDuration: parseInt(process.env.TEMP_BLOCK_DURATION || '300', 10) * 1000, // 5 minutes by default
+      maxPayloadSize: parseInt(process.env.MAX_PAYLOAD_SIZE || '1', 10) * 1024 * 1024, // 1MB max payload size
+      validateWebSocketFrames: process.env.VALIDATE_WS_FRAMES === 'true'
+    }
   }
 };
 
