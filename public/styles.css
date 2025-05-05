@@ -1,17 +1,17 @@
 :root {
     /* Dark theme variables */
-    --bg-color: #1a1d21;
-    --text-color: #e9ecef;
-    --text-muted: #adb5bd;
-    --border-color: #343a40;
-    --card-bg: #212529;
-    --card-header: #343a40;
-    --hover-bg: #2b3035;
-    --table-stripe: rgba(255, 255, 255, 0.02);
+    --bg-color: #121418;
+    --text-color: #ffffff;
+    --text-muted: #c2c7d0;
+    --border-color: #2c3035;
+    --card-bg: #1a1e24;
+    --card-header: #232830;
+    --hover-bg: #232830;
+    --table-stripe: rgba(255, 255, 255, 0.03);
     --shadow-color: rgba(0, 0, 0, 0.3);
-    --nav-hover: #2b3035;
-    --input-bg: #2b3035;
-    --input-border: #495057;
+    --nav-hover: #232830;
+    --input-bg: #232830;
+    --input-border: #3d4147;
     --gradient-start: #6f42c1;
     --gradient-end: #20c997;
     --v3-color: #6f42c1;
@@ -22,11 +22,13 @@
 
 /* Badge tweaks for dark theme */
 .badge-in {
-    background-color: rgba(13, 110, 253, 0.2);
+    background-color: rgba(13, 110, 253, 0.3);
+    color: #d9e6ff;
 }
 
 .badge-out {
-    background-color: rgba(32, 201, 151, 0.2);
+    background-color: rgba(32, 201, 151, 0.3);
+    color: #d5fff3;
 }
 
 .connection-url-card {
@@ -34,11 +36,11 @@
 }
 
 .glass-card {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.1);
 }
 
 .glass-card:hover {
-    background: rgba(255, 255, 255, 0.12);
+    background: rgba(255, 255, 255, 0.15);
 }
 
 body {
@@ -271,7 +273,7 @@ nav ul li a.active {
 
 .glass-card {
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.08);
     backdrop-filter: blur(10px);
     -webkit-backdrop-filter: blur(10px);
     border: 1px solid rgba(255, 255, 255, 0.2);
@@ -281,13 +283,14 @@ nav ul li a.active {
 }
 
 .glass-card:hover {
-    background: rgba(255, 255, 255, 0.25);
+    background: rgba(255, 255, 255, 0.15);
     transform: translateY(-3px);
 }
 
 .glass-card h6 {
     margin-bottom: 5px;
     font-weight: 600;
+    color: white;
 }
 
 /* Password container */
