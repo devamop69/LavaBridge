@@ -1,7 +1,7 @@
 {
-  "name": "lavalink_proxy",
+  "name": "lavabridge",
   "version": "1.0.0",
-  "description": "A pure TCP proxy for Lavalink v3 and v4 servers",
+  "description": "A TCP tunneling proxy that routes clients to Lavalink v3 or v4 backends",
   "main": "src/index.js",
   "scripts": {
     "start": "node start.js",

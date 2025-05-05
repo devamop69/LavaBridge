@@ -62,57 +62,13 @@ The proxy also supports the HAProxy PROXY protocol, allowing it to receive conne
    npm install
    ```
 
-3. Create a `.env` file with your configuration:
+3. Create a `.env` file with your configuration (see env.sample for all available options):
    ```
-   # Proxy configuration
-   PROXY_HOST=0.0.0.0
-   PROXY_PORT=6923
-   WEB_PORT=6980
-   PROXY_PASSWORD=DevamOP
-   ENABLE_PROXY_PROTOCOL=false
-
-   # Backend server configuration
-   LAVALINK_V3_HOST=192.168.1.72
-   LAVALINK_V3_PORT=8806
-
-   LAVALINK_V4_HOST=192.168.1.72
-   LAVALINK_V4_PORT=8807
-
-   # Data storage configuration
-   DATABASE_DIR=./database
-   CONNECTION_DB=connections.json
-   IP_USAGE_DB=ip_usage.json
-   BACKEND_STATUS_DB=backend_status.json
-   SECURITY_LOG_DB=security_log.json
-   IP_BLACKLIST_DB=ip_blacklist.json
-
-   # Rate tracking configuration
-   RATE_TRACKING_INTERVAL=5000
-   RATE_HISTORY_LENGTH=12
+   # Copy the sample environment file
+   cp env.sample .env
    
-   # Security configuration
-   MAX_CONNECTIONS_PER_IP=10
-   MAX_CONNECTIONS_TOTAL=100
-   CONNECTION_RATE_LIMIT=5
-   RATE_WINDOW_MS=10000
-   AUTO_BLACKLIST=false
-   BLACKLIST_THRESHOLD=5
-   BLACKLIST_DURATION=86400
-   TRACK_USER_AGENTS=true
-   BLOCK_UNKNOWN_USER_AGENTS=false
-   LOG_FULL_HEADERS=false
-   SUSPICIOUS_DATA_RATE=10
-   SECURITY_PASSWORD=AdminSecure123
-   
-   # DDoS protection configuration
-   DDOS_PROTECTION=true
-   BURST_THRESHOLD=5
-   BURST_BLACKLIST_THRESHOLD=15
-   BURST_INTERVAL_MS=200
-   BURST_RESET_MS=5000
-   TEMP_BLOCK_DURATION=300
-   MAX_PAYLOAD_SIZE=1
-   VALIDATE_WS_FRAMES=true
+   # Edit the file with your preferred settings
+   nano .env
    ```
 
 ## Usage

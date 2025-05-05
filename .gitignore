@@ -91,6 +91,7 @@ dist
 Thumbs.db
 
 # Exclude from git tracking but keep locally
+# These directories contain project documentation and context
 # DO NOT DELETE THESE DIRECTORIES LOCALLY
 memory-bank/
 .cursor/
