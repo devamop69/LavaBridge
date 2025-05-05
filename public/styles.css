@@ -1,0 +1,332 @@
+:root {
+    /* Light theme variables */
+    --bg-color: #f8f9fa;
+    --text-color: #212529;
+    --text-muted: #6c757d;
+    --border-color: #e9ecef;
+    --card-bg: #ffffff;
+    --card-header: #f8f9fa;
+    --hover-bg: #f0f0f0;
+    --table-stripe: rgba(0, 0, 0, 0.02);
+    --shadow-color: rgba(0, 0, 0, 0.1);
+    --nav-hover: #f0f0f0;
+    --input-bg: #ffffff;
+    --input-border: #ced4da;
+}
+
+[data-theme="dark"] {
+    /* Dark theme variables */
+    --bg-color: #121212;
+    --text-color: #e0e0e0;
+    --text-muted: #adb5bd;
+    --border-color: #2d3133;
+    --card-bg: #1e1e1e;
+    --card-header: #252525;
+    --hover-bg: #2d2d2d;
+    --table-stripe: rgba(255, 255, 255, 0.05);
+    --shadow-color: rgba(0, 0, 0, 0.3);
+    --nav-hover: #333333;
+    --input-bg: #2d2d2d;
+    --input-border: #444444;
+}
+
+body {
+    padding: 20px;
+    background-color: var(--bg-color);
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: var(--text-color);
+    transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Theme toggle styles */
+.theme-switch-wrapper {
+    display: flex;
+    align-items: center;
+}
+
+.theme-switch {
+    display: inline-block;
+    height: 24px;
+    position: relative;
+    width: 48px;
+}
+
+.theme-switch input {
+    display: none;
+}
+
+.slider {
+    background-color: #ccc;
+    bottom: 0;
+    cursor: pointer;
+    left: 0;
+    position: absolute;
+    right: 0;
+    top: 0;
+    transition: .4s;
+    border-radius: 34px;
+}
+
+.slider:before {
+    background-color: white;
+    bottom: 4px;
+    content: "";
+    height: 16px;
+    left: 4px;
+    position: absolute;
+    transition: .4s;
+    width: 16px;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background-color: #2196F3;
+}
+
+input:checked + .slider:before {
+    transform: translateX(24px);
+}
+
+.theme-switch-wrapper span {
+    margin-left: 10px;
+    font-size: 0.9rem;
+}
+
+.sun-icon, .moon-icon {
+    width: 16px;
+    height: 16px;
+    display: inline-block;
+    margin-right: 8px;
+    vertical-align: middle;
+}
+
+.sun-icon {
+    color: #f9d71c;
+}
+
+.moon-icon {
+    color: #ccc;
+}
+
+/* Navigation styles */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+header h1 {
+    margin: 0;
+    font-size: 1.75rem;
+}
+
+nav {
+    margin: 0 auto 0 20px;
+}
+
+nav ul {
+    display: flex;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+nav ul li {
+    margin-right: 15px;
+}
+
+nav ul li a {
+    text-decoration: none;
+    color: var(--text-muted);
+    font-weight: 500;
+    padding: 5px 10px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+}
+
+nav ul li a:hover {
+    color: var(--text-color);
+    background-color: var(--nav-hover);
+}
+
+nav ul li a.active {
+    color: #fff;
+    background-color: #0d6efd;
+}
+
+.card {
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px var(--shadow-color);
+    border: none;
+    border-radius: 8px;
+    overflow: hidden;
+    background-color: var(--card-bg);
+}
+
+.card-header {
+    font-weight: bold;
+    padding: 12px 16px;
+    background-color: var(--card-header);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.card-body {
+    background-color: var(--card-bg);
+}
+
+.connection-card {
+    transition: background-color 0.3s ease;
+}
+
+.connection-card:hover {
+    background-color: var(--hover-bg);
+}
+
+.badge {
+    padding: 6px 10px;
+    font-size: 0.85rem;
+    border-radius: 4px;
+    color: white;
+}
+
+.badge-v3 {
+    background-color: #6f42c1;
+}
+
+.badge-v4 {
+    background-color: #20c997;
+}
+
+.status-count {
+    font-size: 2.5rem;
+    font-weight: bold;
+    color: var(--text-color);
+}
+
+.refresh-btn {
+    cursor: pointer;
+}
+
+#last-updated {
+    font-style: italic;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+}
+
+.header-wrapper {
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 15px;
+    margin-bottom: 20px;
+}
+
+.table {
+    margin-bottom: 0;
+    color: var(--text-color);
+}
+
+.table th {
+    font-weight: 600;
+    background-color: var(--card-header);
+    color: var(--text-color);
+    border-color: var(--border-color);
+}
+
+.table td {
+    border-color: var(--border-color);
+}
+
+.table-striped tbody tr:nth-of-type(odd) {
+    background-color: var(--table-stripe);
+}
+
+.table-hover tbody tr:hover {
+    background-color: var(--hover-bg);
+}
+
+/* Form controls in dark mode */
+.form-control, .form-select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-color);
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--input-bg);
+    color: var(--text-color);
+}
+
+/* Animated refresh icon */
+.spin {
+    animation: spin 1s linear;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .status-count {
+        font-size: 2rem;
+    }
+    
+    .container {
+        padding: 10px;
+    }
+    
+    header {
+        flex-direction: column;
+        align-items: start;
+    }
+    
+    nav {
+        margin: 10px 0 0 0;
+        width: 100%;
+        overflow-x: auto;
+    }
+    
+    nav ul {
+        width: 100%;
+    }
+}
+
+/* Stats cards */
+.stats-card {
+    transition: transform 0.2s ease-in-out;
+}
+
+.stats-card:hover {
+    transform: translateY(-5px);
+}
+
+/* Connection status indicators */
+.connection-status {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    margin-right: 5px;
+}
+
+.status-online {
+    background-color: #28a745;
+}
+
+.connection-time {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+}
+
+/* Footer */
+.footer {
+    text-align: center;
+    margin-top: 30px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border-color);
+    color: var(--text-muted);
+    font-size: 0.85rem;
+} 

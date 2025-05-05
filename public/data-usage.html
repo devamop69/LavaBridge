@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lavalink Proxy - Data Usage</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .data-bar {
+            height: 6px;
+            border-radius: 3px;
+            margin-top: 3px;
+        }
+        .data-in {
+            background-color: #0d6efd;
+        }
+        .data-out {
+            background-color: #20c997;
+        }
+        .ip-row {
+            transition: all 0.2s ease;
+        }
+        .ip-row:hover {
+            background-color: #f8f9fa;
+        }
+        .bandwidth-wrapper {
+            position: relative;
+            height: 20px;
+            margin-top: 5px;
+        }
+        .data-pill {
+            font-size: 0.8rem;
+            padding: 2px 8px;
+            border-radius: 12px;
+        }
+        .rate-high {
+            color: #dc3545 !important;
+            font-weight: bold;
+        }
+        .rate-medium {
+            color: #fd7e14 !important;
+            font-weight: bold;
+        }
+        /* Search styles */
+        .search-highlight {
+            background-color: #fff3cd;
+            padding: 0 2px;
+            border-radius: 2px;
+            font-weight: bold;
+        }
+        #search-results-count {
+            font-size: 0.8rem;
+            white-space: nowrap;
+        }
+        #clear-search {
+            cursor: pointer;
+        }
+        .fade-in {
+            animation: fadeIn 0.3s;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        /* Sort styles */
+        .sortable {
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+        }
+        .sortable:hover {
+            background-color: #f8f9fa;
+        }
+        .sort-icon {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-left: 5px;
+        }
+        .sort-asc .sort-icon::after {
+            content: '▲';
+            font-size: 10px;
+            color: #666;
+        }
+        .sort-desc .sort-icon::after {
+            content: '▼';
+            font-size: 10px;
+            color: #666;
+        }
+        .active-sort {
+            background-color: #f0f0f0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Lavalink Proxy</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">Dashboard</a></li>
+                    <li><a href="/health">Health</a></li>
+                    <li><a href="/data-usage" class="active">Data Usage</a></li>
+                    <li><a href="/security">Security</a></li>
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <div class="theme-switch-wrapper me-3">
+                    <label class="theme-switch" for="checkbox">
+                        <input type="checkbox" id="checkbox" />
+                        <div class="slider"></div>
+                    </label>
+                    <span id="theme-label"></span>
+                </div>
+                <button id="refresh-btn" class="btn btn-sm btn-outline-primary">
+                    <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </header>
+
+        <div class="row mb-4">
+            <div class="col-md-12">
+                <div class="card">
+                    <div class="card-header bg-primary text-white">
+                        TCP Data Usage Summary
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 text-center">
+                                <h3 id="total-ips">0</h3>
+                                <p>Unique IPs</p>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <h3 id="total-data-in">0 KB</h3>
+                                <p>Total Data In</p>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <h3 id="total-data-out">0 KB</h3>
+                                <p>Total Data Out</p>
+                            </div>
+                            <div class="col-md-3 text-center">
+                                <h3 id="total-data-rate">0 KB/s</h3>
+                                <p>Current Rate</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Per-IP Data Usage</span>
+                <div class="search-container d-flex" style="width: 300px;">
+                    <div class="input-group">
+                        <input 
+                            type="text" 
+                            id="ip-search" 
+                            class="form-control" 
+                            placeholder="Search IP address..." 
+                            aria-label="Search IP address"
+                        >
+                        <button 
+                            id="clear-search" 
+                            class="btn btn-outline-secondary" 
+                            type="button"
+                            style="display: none;"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-x" viewBox="0 0 16 16">
+                                <path d="M4.646 4.646a.5.5 0 0 1 .708 0L8 7.293l2.646-2.647a.5.5 0 0 1 .708.708L8.707 8l2.647 2.646a.5.5 0 0 1-.708.708L8 8.707l-2.646 2.647a.5.5 0 0 1-.708-.708L7.293 8 4.646 5.354a.5.5 0 0 1 0-.708z"/>
+                            </svg>
+                        </button>
+                    </div>
+                    <span id="search-results-count" class="ms-2 mt-1 text-muted" style="display: none;"></span>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="ip">IP Address <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="connections">Active Connections <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="bytesIn">Data In <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="bytesOut">Data Out <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="totalBytes">Total Data <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="totalRate">Current Rate <span class="sort-icon"></span></th>
+                                <th>Bandwidth Usage</th>
+                                <th class="sortable" data-sort="lastActive">Last Active <span class="sort-icon"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="ip-usage-table">
+                            <tr>
+                                <td colspan="8" class="text-center">No data usage recorded</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="footer">
+            <p>Lavalink Proxy - A TCP tunneling proxy for Lavalink v3 and v4 servers</p>
+            <p><span id="last-updated">Last updated: Never</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Store the IP usage data globally for filtering
+        let ipUsageData = [];
+        // Track current sort state
+        let currentSort = { field: 'totalBytes', direction: 'desc' };
+        
+        // Format time ago
+        function timeAgo(date) {
+            const seconds = Math.floor((new Date() - new Date(date)) / 1000);
+            
+            let interval = seconds / 31536000;
+            if (interval > 1) return Math.floor(interval) + " years ago";
+            
+            interval = seconds / 2592000;
+            if (interval > 1) return Math.floor(interval) + " months ago";
+            
+            interval = seconds / 86400;
+            if (interval > 1) return Math.floor(interval) + " days ago";
+            
+            interval = seconds / 3600;
+            if (interval > 1) return Math.floor(interval) + " hours ago";
+            
+            interval = seconds / 60;
+            if (interval > 1) return Math.floor(interval) + " minutes ago";
+            
+            if(seconds < 10) return "just now";
+            
+            return Math.floor(seconds) + " seconds ago";
+        }
+        
+        // Determine the rate class based on data rate
+        function getRateClass(bytesPerSecond) {
+            // High rate: > 1 MB/s
+            if (bytesPerSecond > 1048576) {
+                return 'rate-high';
+            } 
+            // Medium rate: > 100 KB/s
+            else if (bytesPerSecond > 102400) {
+                return 'rate-medium';
+            }
+            return '';
+        }
+
+        // Sort IP data based on current sort settings
+        function sortIpData(data) {
+            return [...data].sort((a, b) => {
+                let valueA, valueB;
+                
+                // Get the values to compare based on the sort field
+                switch (currentSort.field) {
+                    case 'ip':
+                        valueA = a.ip;
+                        valueB = b.ip;
+                        break;
+                    case 'connections':
+                        valueA = a.activeConnections;
+                        valueB = b.activeConnections;
+                        break;
+                    case 'bytesIn':
+                        valueA = a.bytesIn;
+                        valueB = b.bytesIn;
+                        break;
+                    case 'bytesOut':
+                        valueA = a.bytesOut;
+                        valueB = b.bytesOut;
+                        break;
+                    case 'totalBytes':
+                        valueA = a.totalBytes;
+                        valueB = b.totalBytes;
+                        break;
+                    case 'totalRate':
+                        valueA = a.totalRate;
+                        valueB = b.totalRate;
+                        break;
+                    case 'lastActive':
+                        valueA = new Date(a.lastActive).getTime();
+                        valueB = new Date(b.lastActive).getTime();
+                        break;
+                    default:
+                        valueA = a.totalBytes;
+                        valueB = b.totalBytes;
+                }
+                
+                // String comparison for IP addresses
+                if (currentSort.field === 'ip') {
+                    return currentSort.direction === 'asc' 
+                        ? valueA.localeCompare(valueB) 
+                        : valueB.localeCompare(valueA);
+                }
+                
+                // Numeric comparison for everything else
+                return currentSort.direction === 'asc' 
+                    ? valueA - valueB 
+                    : valueB - valueA;
+            });
+        }
+
+        // Update the UI to reflect the current sort
+        function updateSortUI() {
+            // Clear all sort indicators
+            document.querySelectorAll('th.sortable').forEach(th => {
+                th.classList.remove('sort-asc', 'sort-desc', 'active-sort');
+            });
+            
+            // Add the appropriate sort indicator to the current sort column
+            const sortHeader = document.querySelector(`th[data-sort="${currentSort.field}"]`);
+            if (sortHeader) {
+                sortHeader.classList.add(`sort-${currentSort.direction}`, 'active-sort');
+            }
+        }
+
+        // Function to render the IP usage table with filtered data
+        function renderIpUsageTable(filteredData, searchQuery = '') {
+            const tableBody = document.getElementById('ip-usage-table');
+            
+            if (filteredData.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No matching results found</td></tr>';
+                return;
+            }
+            
+            tableBody.innerHTML = '';
+            
+            // Sort the data before rendering
+            const sortedData = sortIpData(filteredData);
+            
+            // Update the sort UI
+            updateSortUI();
+            
+            // Find max data for relative bars
+            const maxData = Math.max(...sortedData.map(ip => ip.totalBytes));
+            
+            sortedData.forEach(ip => {
+                const row = document.createElement('tr');
+                row.className = 'ip-row fade-in';
+                
+                // Calculate percentages for the bandwidth bars
+                const inPercent = maxData > 0 ? (ip.bytesIn / maxData) * 100 : 0;
+                const outPercent = maxData > 0 ? (ip.bytesOut / maxData) * 100 : 0;
+                
+                // Get rate class for color coding
+                const rateClass = getRateClass(ip.totalRate);
+                
+                // Highlight search matches if a search query exists
+                let ipDisplay = ip.ip;
+                if (searchQuery) {
+                    const searchTermLower = searchQuery.toLowerCase();
+                    const ipLower = ip.ip.toLowerCase();
+                    
+                    if (ipLower.includes(searchTermLower)) {
+                        const startIndex = ipLower.indexOf(searchTermLower);
+                        const endIndex = startIndex + searchTermLower.length;
+                        
+                        const before = ip.ip.substring(0, startIndex);
+                        const match = ip.ip.substring(startIndex, endIndex);
+                        const after = ip.ip.substring(endIndex);
+                        
+                        ipDisplay = `${before}<span class="search-highlight">${match}</span>${after}`;
+                    }
+                }
+                
+                row.innerHTML = `
+                    <td>${ipDisplay}</td>
+                    <td>${ip.activeConnections}</td>
+                    <td>
+                        <span class="data-pill bg-primary bg-opacity-10 text-primary">${ip.formattedBytesIn}</span>
+                    </td>
+                    <td>
+                        <span class="data-pill bg-success bg-opacity-10 text-success">${ip.formattedBytesOut}</span>
+                    </td>
+                    <td>
+                        <strong>${ip.formattedTotal}</strong>
+                    </td>
+                    <td>
+                        <span class="data-pill bg-secondary bg-opacity-10 text-secondary ${rateClass}">
+                            ${ip.formattedTotalRate}
+                        </span>
+                    </td>
+                    <td>
+                        <div class="bandwidth-wrapper">
+                            <div class="data-bar data-in" style="width: ${inPercent}%"></div>
+                            <div class="data-bar data-out" style="width: ${outPercent}%"></div>
+                        </div>
+                    </td>
+                    <td>${timeAgo(ip.lastActive)}</td>
+                `;
+                
+                tableBody.appendChild(row);
+            });
+        }
+
+        // Function to filter IP data based on search query
+        function filterIpData(searchQuery) {
+            if (!searchQuery) {
+                return ipUsageData; // Return all data if no search query
+            }
+            
+            searchQuery = searchQuery.toLowerCase().trim();
+            return ipUsageData.filter(ip => 
+                ip.ip.toLowerCase().includes(searchQuery)
+            );
+        }
+
+        // Handle click on sortable column headers
+        document.querySelectorAll('th.sortable').forEach(th => {
+            th.addEventListener('click', function() {
+                const field = this.getAttribute('data-sort');
+                
+                // Toggle direction if clicking the same field
+                if (field === currentSort.field) {
+                    currentSort.direction = currentSort.direction === 'asc' ? 'desc' : 'asc';
+                } else {
+                    // New field, default to descending for most fields (ascending for IP address)
+                    currentSort.field = field;
+                    currentSort.direction = field === 'ip' ? 'asc' : 'desc';
+                }
+                
+                // Re-render with the current search query
+                const searchQuery = document.getElementById('ip-search').value;
+                const filteredData = filterIpData(searchQuery);
+                renderIpUsageTable(filteredData, searchQuery);
+            });
+        });
+
+        // Handle search input
+        document.getElementById('ip-search').addEventListener('input', function(e) {
+            const searchQuery = e.target.value;
+            const filteredData = filterIpData(searchQuery);
+            renderIpUsageTable(filteredData, searchQuery);
+            
+            // Show/hide clear button
+            const clearButton = document.getElementById('clear-search');
+            clearButton.style.display = searchQuery ? 'block' : 'none';
+            
+            // Update results count display
+            const countElement = document.getElementById('search-results-count');
+            if (searchQuery) {
+                countElement.textContent = `${filteredData.length} results`;
+                countElement.style.display = 'block';
+            } else {
+                countElement.style.display = 'none';
+            }
+        });
+        
+        // Handle clear button
+        document.getElementById('clear-search').addEventListener('click', function() {
+            const searchInput = document.getElementById('ip-search');
+            searchInput.value = '';
+            
+            // Hide clear button and result count
+            this.style.display = 'none';
+            document.getElementById('search-results-count').style.display = 'none';
+            
+            // Show all data
+            renderIpUsageTable(ipUsageData);
+            
+            // Focus on the search input
+            searchInput.focus();
+        });
+
+        // Fetch and update data usage
+        function updateDataUsage() {
+            // Add spin animation to refresh icon
+            const refreshIcon = document.getElementById('refresh-icon');
+            refreshIcon.classList.add('spin');
+            
+            fetch('/api/data-usage')
+                .then(response => response.json())
+                .then(data => {
+                    // Store the data globally for filtering
+                    ipUsageData = data.ipUsage;
+                    
+                    // Update summary stats
+                    document.getElementById('total-ips').textContent = data.totalIps;
+                    
+                    // Calculate totals
+                    let totalBytesIn = 0;
+                    let totalBytesOut = 0;
+                    let totalRateIn = 0;
+                    let totalRateOut = 0;
+                    
+                    data.ipUsage.forEach(ip => {
+                        totalBytesIn += ip.bytesIn;
+                        totalBytesOut += ip.bytesOut;
+                        totalRateIn += ip.bytesInRate;
+                        totalRateOut += ip.bytesOutRate;
+                    });
+                    
+                    document.getElementById('total-data-in').textContent = formatBytes(totalBytesIn);
+                    document.getElementById('total-data-out').textContent = formatBytes(totalBytesOut);
+                    
+                    // Update total data rate with appropriate styling
+                    const totalRate = totalRateIn + totalRateOut;
+                    const totalRateFormatted = formatBytes(totalRate) + '/s';
+                    const totalRateElement = document.getElementById('total-data-rate');
+                    totalRateElement.textContent = totalRateFormatted;
+                    
+                    // Apply color class based on rate
+                    totalRateElement.className = getRateClass(totalRate);
+                    
+                    // Filter the data based on current search query
+                    const searchQuery = document.getElementById('ip-search').value;
+                    const filteredData = filterIpData(searchQuery);
+                    
+                    // Render the filtered table
+                    renderIpUsageTable(filteredData, searchQuery);
+                    
+                    // Update last updated time
+                    document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleString();
+                    
+                    // Remove spin animation
+                    refreshIcon.classList.remove('spin');
+                })
+                .catch(error => {
+                    console.error('Error fetching data usage:', error);
+                    refreshIcon.classList.remove('spin');
+                });
+        }
+
+        // Helper function to format bytes
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // Initial update
+        updateDataUsage();
+        
+        // Set up auto-refresh every 5 seconds
+        setInterval(updateDataUsage, 5000);
+        
+        // Set up manual refresh
+        document.getElementById('refresh-btn').addEventListener('click', updateDataUsage);
+
+        // Dark mode toggle
+        const toggleSwitch = document.getElementById('checkbox');
+        const themeLabel = document.getElementById('theme-label');
+        
+        // Function to set theme
+        function setTheme(isDark) {
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                themeLabel.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="moon-icon"><path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>';
+                toggleSwitch.checked = true;
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                themeLabel.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="sun-icon"><path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" /></svg>';
+                toggleSwitch.checked = false;
+            }
+        }
+        
+        // Check for saved theme preference
+        const currentTheme = localStorage.getItem('theme');
+        if (currentTheme) {
+            setTheme(currentTheme === 'dark');
+        } else {
+            // Check for OS preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                setTheme(true);
+            } else {
+                setTheme(false);
+            }
+        }
+        
+        // Toggle theme when switch is clicked
+        toggleSwitch.addEventListener('change', function() {
+            setTheme(this.checked);
+        });
+    </script>
+</body>
+</html> 

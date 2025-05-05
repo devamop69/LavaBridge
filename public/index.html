@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lavalink Proxy - Connection Status</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/styles.css">
+    <style>
+        .data-badge {
+            display: inline-block;
+            padding: 0.25em 0.6em;
+            font-size: 0.75em;
+            font-weight: 600;
+            border-radius: 0.375rem;
+            margin-left: 0.5rem;
+        }
+        .badge-in {
+            background-color: rgba(13, 110, 253, 0.1);
+            color: #0d6efd;
+        }
+        .badge-out {
+            background-color: rgba(32, 201, 151, 0.1);
+            color: #20c997;
+        }
+        .data-rate {
+            font-size: 0.7em;
+            display: block;
+            margin-top: 2px;
+            color: #6c757d;
+        }
+        .rate-high {
+            color: #dc3545;
+            font-weight: bold;
+        }
+        .rate-medium {
+            color: #fd7e14;
+            font-weight: bold;
+        }
+        .sortable {
+            cursor: pointer;
+        }
+        .sortable:hover {
+            background-color: rgba(0,0,0,0.05);
+        }
+        .sort-icon {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-left: 5px;
+        }
+        .sort-asc::after {
+            content: "▲";
+            font-size: 10px;
+        }
+        .sort-desc::after {
+            content: "▼";
+            font-size: 10px;
+        }
+        .search-container {
+            display: flex;
+            margin-bottom: 15px;
+            gap: 10px;
+            align-items: center;
+        }
+        .search-container input {
+            flex-grow: 1;
+            padding: 8px 12px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        .rate-options {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            white-space: nowrap;
+        }
+        .rate-options label {
+            margin-right: 5px;
+            font-weight: bold;
+            white-space: nowrap;
+        }
+        .rate-options select {
+            padding: 5px 8px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            min-width: 110px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Lavalink Proxy</h1>
+            <nav>
+                <ul>
+                    <li><a href="/" class="active">Dashboard</a></li>
+                    <li><a href="/health">Health</a></li>
+                    <li><a href="/data-usage">Data Usage</a></li>
+                    <li><a href="/security">Security</a></li>
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <div class="theme-switch-wrapper me-3">
+                    <label class="theme-switch" for="checkbox">
+                        <input type="checkbox" id="checkbox" />
+                        <div class="slider"></div>
+                    </label>
+                    <span id="theme-label"></span>
+                </div>
+                <span id="last-updated">Last updated: Never</span>
+                <button id="refresh-btn" class="btn btn-sm btn-outline-primary ms-2">
+                    <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </header>
+
+        <div class="row mb-4">
+            <div class="col-md-4">
+                <div class="card text-center stats-card">
+                    <div class="card-header bg-primary text-white">Active Connections</div>
+                    <div class="card-body">
+                        <div class="status-count" id="active-connections">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center stats-card">
+                    <div class="card-header bg-purple text-white" style="background-color: #6f42c1;">v3 Connections</div>
+                    <div class="card-body">
+                        <div class="status-count" id="v3-connections">0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card text-center stats-card">
+                    <div class="card-header text-white" style="background-color: #20c997;">v4 Connections</div>
+                    <div class="card-body">
+                        <div class="status-count" id="v4-connections">0</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span>Connection Details</span>
+                <div>
+                    <small class="text-muted me-3">
+                        <span class="data-badge badge-in">In</span> Received from client
+                    </small>
+                    <small class="text-muted">
+                        <span class="data-badge badge-out">Out</span> Sent to client
+                    </small>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="search-container">
+                    <input type="text" id="connection-search" placeholder="Search connections (ID, IP, version...)">
+                    <div class="rate-options">
+                        <label for="rate-format">Data Rate:</label>
+                        <select id="rate-format" class="form-select form-select-sm">
+                            <option value="bytes">Bytes/s</option>
+                            <option value="bits">bits/s</option>
+                            <option value="packets">Packets/s</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th class="sortable" data-sort="id">ID <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="clientAddress">Client Address <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="backend">Backend <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="version">Version <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="startTime">Start Time <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="uptime">Uptime <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="totalBytes">Data Usage <span class="sort-icon"></span></th>
+                                <th class="sortable" data-sort="totalRate">Data Rate <span class="sort-icon"></span></th>
+                            </tr>
+                        </thead>
+                        <tbody id="connections-table">
+                            <tr>
+                                <td colspan="8" class="text-center">No active connections</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Lavalink Proxy - A TCP tunneling proxy for Lavalink v3 and v4 servers</p>
+        </div>
+    </div>
+
+    <script>
+        // Global variable to store connections data
+        let connectionsData = [];
+        let currentSortField = 'id';
+        let currentSortOrder = 'asc';
+        let currentRateFormat = 'bytes'; // Default rate format
+
+        // Dark mode toggle
+        const toggleSwitch = document.getElementById('checkbox');
+        const themeLabel = document.getElementById('theme-label');
+        
+        // Function to set theme
+        function setTheme(isDark) {
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                themeLabel.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="moon-icon"><path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>';
+                toggleSwitch.checked = true;
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                themeLabel.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="sun-icon"><path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" /></svg>';
+                toggleSwitch.checked = false;
+            }
+        }
+        
+        // Check for saved theme preference
+        const currentTheme = localStorage.getItem('theme');
+        if (currentTheme) {
+            setTheme(currentTheme === 'dark');
+        } else {
+            // Check for OS preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                setTheme(true);
+            } else {
+                setTheme(false);
+            }
+        }
+        
+        // Toggle theme when switch is clicked
+        toggleSwitch.addEventListener('change', function() {
+            setTheme(this.checked);
+        });
+
+        // Format the date
+        function formatDate(dateString) {
+            const date = new Date(dateString);
+            return date.toLocaleString();
+        }
+
+        // Format seconds to human readable time
+        function formatUptime(seconds) {
+            if (seconds < 60) {
+                return `${seconds} sec`;
+            } else if (seconds < 3600) {
+                const minutes = Math.floor(seconds / 60);
+                const remainingSeconds = seconds % 60;
+                return `${minutes} min ${remainingSeconds} sec`;
+            } else {
+                const hours = Math.floor(seconds / 3600);
+                const remainingMinutes = Math.floor((seconds % 3600) / 60);
+                return `${hours} hr ${remainingMinutes} min`;
+            }
+        }
+
+        // Format bytes to human readable format
+        function formatBytes(bytes, decimals = 2) {
+            if (bytes === 0) return '0 Bytes';
+            
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
+            
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // Format bits to human readable format
+        function formatBits(bytes, decimals = 2) {
+            const bits = bytes * 8; // Convert bytes to bits
+            if (bits === 0) return '0 bps';
+            
+            const k = 1000; // Use 1000 for bits (networking standard)
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['bps', 'Kbps', 'Mbps', 'Gbps', 'Tbps'];
+            
+            const i = Math.floor(Math.log(bits) / Math.log(k));
+            
+            return parseFloat((bits / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        // Format packets per second (estimated)
+        function formatPackets(bytes, decimals = 2) {
+            const AVG_PACKET_SIZE = 1400; // Average packet size in bytes
+            const packets = bytes / AVG_PACKET_SIZE;
+            
+            if (packets < 1) {
+                return parseFloat(packets.toFixed(2)) + ' pps';
+            } else if (packets < 1000) {
+                return parseFloat(packets.toFixed(1)) + ' pps';
+            } else {
+                return parseFloat((packets / 1000).toFixed(2)) + ' Kpps';
+            }
+        }
+        
+        // Format rate based on selected format
+        function formatRate(bytesPerSecond, format = currentRateFormat) {
+            switch(format) {
+                case 'bits':
+                    return formatBits(bytesPerSecond);
+                case 'packets':
+                    return formatPackets(bytesPerSecond);
+                case 'bytes':
+                default:
+                    return formatBytes(bytesPerSecond) + '/s';
+            }
+        }
+        
+        // Determine the rate class based on data rate
+        function getRateClass(bytesPerSecond) {
+            // High rate: > 1 MB/s
+            if (bytesPerSecond > 1048576) {
+                return 'rate-high';
+            } 
+            // Medium rate: > 100 KB/s
+            else if (bytesPerSecond > 102400) {
+                return 'rate-medium';
+            }
+            return '';
+        }
+
+        // Sort connections data
+        function sortConnections(field, order) {
+            connectionsData.sort((a, b) => {
+                let valueA, valueB;
+                
+                // Extract the appropriate values based on field
+                switch(field) {
+                    case 'id':
+                        valueA = a.id;
+                        valueB = b.id;
+                        break;
+                    case 'clientAddress':
+                        valueA = a.clientAddress;
+                        valueB = b.clientAddress;
+                        break;
+                    case 'backend':
+                        valueA = a.backend;
+                        valueB = b.backend;
+                        break;
+                    case 'version':
+                        valueA = a.version;
+                        valueB = b.version;
+                        break;
+                    case 'startTime':
+                        valueA = new Date(a.startTime).getTime();
+                        valueB = new Date(b.startTime).getTime();
+                        break;
+                    case 'uptime':
+                        valueA = a.uptime;
+                        valueB = b.uptime;
+                        break;
+                    case 'totalBytes':
+                        valueA = a.bytesIn + a.bytesOut;
+                        valueB = b.bytesIn + b.bytesOut;
+                        break;
+                    case 'totalRate':
+                        valueA = a.bytesInRate + a.bytesOutRate;
+                        valueB = b.bytesInRate + b.bytesOutRate;
+                        break;
+                    default:
+                        valueA = a.id;
+                        valueB = b.id;
+                }
+                
+                // Compare the values
+                if (valueA < valueB) {
+                    return order === 'asc' ? -1 : 1;
+                }
+                if (valueA > valueB) {
+                    return order === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+
+        // Function to update the sort indicators
+        function updateSortIndicators(field, order) {
+            // Remove all existing sort indicators
+            document.querySelectorAll('.sort-icon').forEach(icon => {
+                icon.classList.remove('sort-asc', 'sort-desc');
+            });
+            
+            // Add the appropriate indicator to the current sort field
+            const sortHeader = document.querySelector(`th[data-sort="${field}"] .sort-icon`);
+            if (sortHeader) {
+                sortHeader.classList.add(order === 'asc' ? 'sort-asc' : 'sort-desc');
+            }
+        }
+
+        // Function to filter connections based on search
+        function filterConnections(searchTerm) {
+            if (!searchTerm) {
+                return connectionsData;
+            }
+            
+            searchTerm = searchTerm.toLowerCase();
+            
+            return connectionsData.filter(conn => {
+                return conn.id.toString().includes(searchTerm) ||
+                    conn.clientAddress.toLowerCase().includes(searchTerm) ||
+                    conn.backend.toLowerCase().includes(searchTerm) ||
+                    conn.version.toLowerCase().includes(searchTerm);
+            });
+        }
+
+        // Function to render the connections table
+        function renderConnectionsTable(connections) {
+            const tableBody = document.getElementById('connections-table');
+            
+            if (connections.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="8" class="text-center">No active connections</td></tr>';
+            } else {
+                tableBody.innerHTML = '';
+                connections.forEach(conn => {
+                    const row = document.createElement('tr');
+                    row.className = 'connection-card';
+                    
+                    // Determine rate classes
+                    const inRateClass = getRateClass(conn.bytesInRate);
+                    const outRateClass = getRateClass(conn.bytesOutRate);
+                    
+                    row.innerHTML = `
+                        <td>${conn.id}</td>
+                        <td>
+                            <span class="connection-status status-online"></span>
+                            ${conn.clientAddress}
+                        </td>
+                        <td>${conn.backend}</td>
+                        <td><span class="badge badge-${conn.version}">${conn.version}</span></td>
+                        <td>${formatDate(conn.startTime)}</td>
+                        <td>${formatUptime(conn.uptime)}</td>
+                        <td>
+                            <span class="data-badge badge-in">${formatBytes(conn.bytesIn)}</span>
+                            <span class="data-badge badge-out">${formatBytes(conn.bytesOut)}</span>
+                        </td>
+                        <td>
+                            <span class="data-badge badge-in">
+                                <span class="${inRateClass}">${formatRate(conn.bytesInRate)}</span>
+                            </span>
+                            <span class="data-badge badge-out">
+                                <span class="${outRateClass}">${formatRate(conn.bytesOutRate)}</span>
+                            </span>
+                        </td>
+                    `;
+                    
+                    tableBody.appendChild(row);
+                });
+            }
+        }
+
+        // Fetch and update connection data
+        function updateConnectionData() {
+            // Add spin animation to refresh icon
+            const refreshIcon = document.getElementById('refresh-icon');
+            refreshIcon.classList.add('spin');
+            
+            fetch('/api/connections')
+                .then(response => response.json())
+                .then(data => {
+                    // Update counts
+                    document.getElementById('active-connections').textContent = data.activeConnections;
+                    
+                    // Count connections by version
+                    const v3Count = data.connections.filter(conn => conn.version === 'v3').length;
+                    const v4Count = data.connections.filter(conn => conn.version === 'v4').length;
+                    
+                    document.getElementById('v3-connections').textContent = v3Count;
+                    document.getElementById('v4-connections').textContent = v4Count;
+                    
+                    // Store the connections data
+                    connectionsData = data.connections;
+
+                    // Apply current sort
+                    sortConnections(currentSortField, currentSortOrder);
+                    updateSortIndicators(currentSortField, currentSortOrder);
+
+                    // Apply current search filter
+                    const searchTerm = document.getElementById('connection-search').value;
+                    const filteredConnections = filterConnections(searchTerm);
+                    
+                    // Render the table
+                    renderConnectionsTable(filteredConnections);
+                    
+                    // Update last updated time
+                    document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleString();
+                    
+                    // Remove spin animation
+                    refreshIcon.classList.remove('spin');
+                })
+                .catch(error => {
+                    console.error('Error fetching connection data:', error);
+                    // Remove spin animation
+                    refreshIcon.classList.remove('spin');
+                });
+        }
+
+        // Initial update
+        updateConnectionData();
+        
+        // Set up auto-refresh every 5 seconds
+        setInterval(updateConnectionData, 5000);
+        
+        // Set up manual refresh
+        document.getElementById('refresh-btn').addEventListener('click', updateConnectionData);
+
+        // Set up sorting
+        document.querySelectorAll('.sortable').forEach(header => {
+            header.addEventListener('click', function() {
+                const field = this.dataset.sort;
+                
+                // Toggle sort order if clicking the same field
+                if (field === currentSortField) {
+                    currentSortOrder = currentSortOrder === 'asc' ? 'desc' : 'asc';
+                } else {
+                    currentSortField = field;
+                    currentSortOrder = 'asc';
+                }
+                
+                // Sort the data
+                sortConnections(currentSortField, currentSortOrder);
+                
+                // Update sort indicators
+                updateSortIndicators(currentSortField, currentSortOrder);
+                
+                // Apply current search filter
+                const searchTerm = document.getElementById('connection-search').value;
+                const filteredConnections = filterConnections(searchTerm);
+                
+                // Render the table
+                renderConnectionsTable(filteredConnections);
+            });
+        });
+
+        // Set up search functionality
+        document.getElementById('connection-search').addEventListener('input', function() {
+            const searchTerm = this.value;
+            const filteredConnections = filterConnections(searchTerm);
+            renderConnectionsTable(filteredConnections);
+        });
+
+        // Set up rate format selector
+        document.getElementById('rate-format').addEventListener('change', function() {
+            currentRateFormat = this.value;
+            
+            // Apply current search filter
+            const searchTerm = document.getElementById('connection-search').value;
+            const filteredConnections = filterConnections(searchTerm);
+            
+            // Re-render with new rate format
+            renderConnectionsTable(filteredConnections);
+        });
+    </script>
+</body>
+</html> 

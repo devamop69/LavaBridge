@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lavalink Proxy - Security Monitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .security-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+        .violation-item {
+            border-left: 4px solid #f44336;
+            padding-left: 10px;
+            margin-bottom: 10px;
+        }
+        .blacklist-item {
+            border-left: 4px solid #000;
+            padding-left: 10px;
+            margin-bottom: 10px;
+        }
+        .permanent {
+            color: #d32f2f;
+            font-weight: bold;
+        }
+        .temporary {
+            color: #f57c00;
+        }
+        .expired {
+            color: #7cb342;
+            text-decoration: line-through;
+        }
+        .security-action-btn {
+            margin: 5px;
+            padding: 5px 10px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .blacklist-btn {
+            background-color: #d32f2f;
+            color: white;
+        }
+        .unblacklist-btn {
+            background-color: #7cb342;
+            color: white;
+        }
+        .blacklist-controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        .blacklist-controls input, 
+        .blacklist-controls select {
+            padding: 5px 10px;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+        }
+        /* Auth overlay styles */
+        #auth-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.7);
+            z-index: 1000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        .auth-container {
+            background-color: white;
+            border-radius: 8px;
+            padding: 30px;
+            width: 90%;
+            max-width: 450px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+        }
+        .auth-header {
+            text-align: center;
+            margin-bottom: 25px;
+        }
+        .auth-form .form-group {
+            margin-bottom: 20px;
+        }
+        .auth-error {
+            color: #d32f2f;
+            text-align: center;
+            margin-bottom: 15px;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <!-- Auth Overlay - shown initially -->
+    <div id="auth-overlay">
+        <div class="auth-container">
+            <div class="auth-header">
+                <h2>Security Access</h2>
+                <p class="text-muted">Enter the security dashboard password to access security controls</p>
+            </div>
+            <div id="auth-error" class="auth-error">
+                Invalid password. Please try again.
+            </div>
+            <form id="auth-form" class="auth-form">
+                <div class="form-group">
+                    <label for="auth-password">Security Password</label>
+                    <input type="password" id="auth-password" class="form-control" placeholder="Enter security dashboard password" required>
+                </div>
+                <button type="submit" class="btn btn-danger w-100">Access Security Dashboard</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>Lavalink Proxy</h1>
+            <nav>
+                <ul>
+                    <li><a href="/">Dashboard</a></li>
+                    <li><a href="/health">Health</a></li>
+                    <li><a href="/data-usage">Data Usage</a></li>
+                    <li><a href="/security" class="active">Security</a></li>
+                </ul>
+            </nav>
+            <div class="d-flex align-items-center">
+                <div class="theme-switch-wrapper me-3">
+                    <label class="theme-switch" for="checkbox">
+                        <input type="checkbox" id="checkbox" />
+                        <div class="slider"></div>
+                    </label>
+                    <span id="theme-label"></span>
+                </div>
+                <button id="refresh-btn" class="btn btn-sm btn-outline-danger">
+                    <svg id="refresh-icon" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor" class="bi bi-arrow-clockwise" viewBox="0 0 16 16">
+                        <path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2v1z"/>
+                        <path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466z"/>
+                    </svg>
+                    Refresh
+                </button>
+            </div>
+        </header>
+
+        <section class="main-content">
+            <div class="card">
+                <div class="card-header bg-danger text-white">Security Overview</div>
+                <div class="card-body">
+                    <div id="security-summary" class="row">
+                        <div class="col-md-4 text-center">
+                            <h3 id="blacklist-count">0</h3>
+                            <p>Blacklisted IPs</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <h3 id="violations-count">0</h3>
+                            <p>Security Violations</p>
+                        </div>
+                        <div class="col-md-4 text-center">
+                            <h3 id="agents-count">0</h3>
+                            <p>User Agents</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="security-grid">
+                <div class="card">
+                    <div class="card-header bg-dark text-white">IP Blacklist</div>
+                    <div class="card-body">
+                        <p>Manually blacklist IP addresses to block access to the proxy.</p>
+                        
+                        <div class="blacklist-controls">
+                            <input type="text" id="blacklist-ip" placeholder="IP Address" class="form-control">
+                            <input type="text" id="blacklist-reason" placeholder="Reason" class="form-control">
+                            <select id="blacklist-duration" class="form-select">
+                                <option value="3600000">1 Hour</option>
+                                <option value="86400000">24 Hours</option>
+                                <option value="604800000">1 Week</option>
+                                <option value="2592000000">30 Days</option>
+                                <option value="0">Permanent</option>
+                            </select>
+                            <button onclick="blacklistIP()" class="btn btn-danger">Blacklist</button>
+                        </div>
+                        
+                        <div id="blacklist-container">
+                            <p>Loading blacklist data...</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header bg-warning text-dark">Security Violations</div>
+                    <div class="card-body">
+                        <p>Recent security violations detected by the system.</p>
+                        <div id="violations-container">
+                            <p>Loading violations data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card mt-4">
+                <div class="card-header bg-secondary text-white">User Agent Tracking</div>
+                <div class="card-body">
+                    <p>User agents connecting to your Lavalink proxy server.</p>
+                    <div id="user-agents-container">
+                        <p>Loading user agent data...</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <div class="footer">
+            <p>Lavalink Proxy - A TCP tunneling proxy for Lavalink v3 and v4 servers</p>
+            <p><span id="last-updated">Last updated: Never</span></p>
+        </div>
+    </div>
+
+    <script>
+        // Dark mode toggle
+        const toggleSwitch = document.getElementById('checkbox');
+        const themeLabel = document.getElementById('theme-label');
+        
+        // Function to set theme
+        function setTheme(isDark) {
+            if (isDark) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+                localStorage.setItem('theme', 'dark');
+                themeLabel.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="moon-icon"><path d="M21.752 15.002A9.718 9.718 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 009.002-5.998z" /></svg>';
+                toggleSwitch.checked = true;
+            } else {
+                document.documentElement.removeAttribute('data-theme');
+                localStorage.setItem('theme', 'light');
+                themeLabel.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" class="sun-icon"><path d="M12 2.25a.75.75 0 01.75.75v2.25a.75.75 0 01-1.5 0V3a.75.75 0 01.75-.75zM7.5 12a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM18.894 6.166a.75.75 0 00-1.06-1.06l-1.591 1.59a.75.75 0 101.06 1.061l1.591-1.59zM21.75 12a.75.75 0 01-.75.75h-2.25a.75.75 0 010-1.5H21a.75.75 0 01.75.75zM17.834 18.894a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 10-1.061 1.06l1.59 1.591zM12 18a.75.75 0 01.75.75V21a.75.75 0 01-1.5 0v-2.25A.75.75 0 0112 18zM7.758 17.303a.75.75 0 00-1.061-1.06l-1.591 1.59a.75.75 0 001.06 1.061l1.591-1.59zM6 12a.75.75 0 01-.75.75H3a.75.75 0 010-1.5h2.25A.75.75 0 016 12zM6.697 7.757a.75.75 0 001.06-1.06l-1.59-1.591a.75.75 0 00-1.061 1.06l1.59 1.591z" /></svg>';
+                toggleSwitch.checked = false;
+            }
+        }
+        
+        // Check for saved theme preference
+        const currentTheme = localStorage.getItem('theme');
+        if (currentTheme) {
+            setTheme(currentTheme === 'dark');
+        } else {
+            // Check for OS preference
+            if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+                setTheme(true);
+            } else {
+                setTheme(false);
+            }
+        }
+        
+        // Toggle theme when switch is clicked
+        toggleSwitch.addEventListener('change', function() {
+            setTheme(this.checked);
+        });
+
+        // Authentication handling
+        document.getElementById('auth-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('auth-password').value;
+            
+            try {
+                const response = await fetch('/api/security/auth', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ password })
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    // Store session ID in our global variable
+                    currentSessionId = data.sessionId;
+                    
+                    // Hide auth overlay and load security data with the session ID
+                    document.getElementById('auth-overlay').style.display = 'none';
+                    fetchSecurityData(currentSessionId);
+                } else {
+                    // Show error message
+                    document.getElementById('auth-error').style.display = 'block';
+                }
+            } catch (error) {
+                console.error('Authentication error:', error);
+                document.getElementById('auth-error').style.display = 'block';
+            }
+        });
+
+        // Fetch security data with sessionId parameter
+        async function fetchSecurityData(sessionId) {
+            try {
+                const response = await fetch('/api/security', {
+                    headers: {
+                        'Authorization': sessionId || ''
+                    }
+                });
+                
+                // If unauthorized, show auth overlay
+                if (response.status === 401) {
+                    document.getElementById('auth-overlay').style.display = 'flex';
+                    return;
+                }
+                
+                const data = await response.json();
+                renderSecurityData(data);
+                
+                // Update last updated time
+                document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleString();
+                
+                // Remove spin animation from refresh icon
+                document.getElementById('refresh-icon').classList.remove('spin');
+            } catch (error) {
+                console.error('Error fetching security data:', error);
+                document.getElementById('security-summary').innerHTML = 
+                    `<p class="text-danger">Error loading security data: ${error.message}</p>`;
+                    
+                // Remove spin animation from refresh icon
+                document.getElementById('refresh-icon').classList.remove('spin');
+            }
+        }
+
+        function renderSecurityData(data) {
+            // Update summary counts
+            document.getElementById('blacklist-count').textContent = data.blacklistedIPs;
+            document.getElementById('violations-count').textContent = data.totalViolations;
+            document.getElementById('agents-count').textContent = data.userAgentsCount;
+
+            // Render blacklist
+            renderBlacklist(data.blacklist);
+            
+            // Render violations
+            renderViolations(data.violations);
+            
+            // Render user agents
+            renderUserAgents(data.userAgents);
+        }
+
+        function renderBlacklist(blacklist) {
+            const container = document.getElementById('blacklist-container');
+            
+            if (blacklist.length === 0) {
+                container.innerHTML = '<p>No IP addresses are currently blacklisted.</p>';
+                return;
+            }
+            
+            let html = '';
+            
+            blacklist.forEach(item => {
+                const isPermanent = !item.expiresAt;
+                const isExpired = item.expiresAt && new Date(item.expiresAt) < new Date();
+                const statusClass = isPermanent ? 'permanent' : (isExpired ? 'expired' : 'temporary');
+                const statusText = isPermanent ? 'Permanent' : (isExpired ? 'Expired' : formatTimeRemaining(item.expiresAt));
+                
+                html += `
+                    <div class="blacklist-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5>${item.ip}</h5>
+                            <span class="${statusClass}">${statusText}</span>
+                        </div>
+                        <p><strong>Reason:</strong> ${item.reason || 'No reason provided'}</p>
+                        <p><strong>Blacklisted:</strong> ${new Date(item.blacklistedAt).toLocaleString()}</p>
+                        <button onclick="unblacklistIP('${item.ip}')" class="security-action-btn unblacklist-btn">
+                            Remove from Blacklist
+                        </button>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        function formatTimeRemaining(expiresAt) {
+            const now = new Date();
+            const expires = new Date(expiresAt);
+            const diff = expires - now;
+            
+            if (diff <= 0) {
+                return 'Expired';
+            }
+            
+            const hours = Math.floor(diff / (1000 * 60 * 60));
+            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+            
+            if (hours > 24) {
+                const days = Math.floor(hours / 24);
+                return `${days} day${days !== 1 ? 's' : ''} remaining`;
+            }
+            
+            if (hours > 0) {
+                return `${hours}h ${minutes}m remaining`;
+            }
+            
+            return `${minutes}m remaining`;
+        }
+        
+        function renderViolations(violations) {
+            const container = document.getElementById('violations-container');
+            
+            if (violations.length === 0) {
+                container.innerHTML = '<p>No security violations have been detected.</p>';
+                return;
+            }
+            
+            let html = '';
+            
+            violations.forEach(violation => {
+                const reasons = violation.reasons || [];
+                const lastViolation = new Date(violation.lastViolation).toLocaleString();
+                
+                html += `
+                    <div class="violation-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <h5>${violation.ip}</h5>
+                            <span class="badge bg-danger">${violation.count} violations</span>
+                        </div>
+                        <p><strong>Last violation:</strong> ${lastViolation}</p>
+                `;
+                
+                if (reasons.length > 0) {
+                    html += '<p><strong>Recent reasons:</strong></p><ul>';
+                    reasons.slice(-3).forEach(reason => {
+                        html += `<li>${reason.reason} (${new Date(reason.timestamp).toLocaleString()})</li>`;
+                    });
+                    html += '</ul>';
+                }
+                
+                html += `
+                        <button onclick="blacklistIPDirect('${violation.ip}', 'Manually blacklisted after violations', 86400000)" class="security-action-btn blacklist-btn">
+                            Blacklist for 24h
+                        </button>
+                    </div>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        function renderUserAgents(userAgents) {
+            const container = document.getElementById('user-agents-container');
+            
+            if (userAgents.length === 0) {
+                container.innerHTML = '<p>No user agents have been tracked yet.</p>';
+                return;
+            }
+            
+            let html = '<div class="table-responsive"><table class="table table-striped table-hover">';
+            html += `
+                <thead>
+                    <tr>
+                        <th>User Agent</th>
+                        <th>First Seen</th>
+                        <th>Last Seen</th>
+                        <th>Connections</th>
+                        <th>Unique IPs</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+            
+            userAgents.forEach(agent => {
+                html += `
+                    <tr>
+                        <td>${agent.userAgent || '<empty>'}</td>
+                        <td>${new Date(agent.firstSeen).toLocaleString()}</td>
+                        <td>${new Date(agent.lastSeen).toLocaleString()}</td>
+                        <td>${agent.count}</td>
+                        <td>${agent.uniqueIps}</td>
+                    </tr>
+                `;
+            });
+            
+            html += '</tbody></table></div>';
+            container.innerHTML = html;
+        }
+        
+        function blacklistIP() {
+            const ip = document.getElementById('blacklist-ip').value;
+            const reason = document.getElementById('blacklist-reason').value;
+            const duration = parseInt(document.getElementById('blacklist-duration').value, 10);
+            
+            if (!ip) {
+                alert('Please enter an IP address to blacklist');
+                return;
+            }
+            
+            blacklistIPDirect(ip, reason, duration);
+        }
+        
+        async function blacklistIPDirect(ip, reason, duration) {
+            try {
+                const response = await fetch('/api/security/blacklist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': currentSessionId || ''
+                    },
+                    body: JSON.stringify({
+                        ip,
+                        reason: reason || 'Manually blacklisted',
+                        duration
+                    })
+                });
+                
+                if (response.status === 401) {
+                    // Unauthorized, show login
+                    document.getElementById('auth-overlay').style.display = 'flex';
+                    return;
+                }
+                
+                if (response.ok) {
+                    // Clear form fields
+                    if (document.getElementById('blacklist-ip')) {
+                        document.getElementById('blacklist-ip').value = '';
+                        document.getElementById('blacklist-reason').value = '';
+                    }
+                    
+                    // Refresh security data
+                    fetchSecurityData(currentSessionId);
+                } else {
+                    const data = await response.json();
+                    alert(`Error: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error blacklisting IP:', error);
+                alert('An error occurred while blacklisting the IP');
+            }
+        }
+        
+        async function unblacklistIP(ip) {
+            try {
+                const response = await fetch('/api/security/unblacklist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': currentSessionId || ''
+                    },
+                    body: JSON.stringify({ ip })
+                });
+                
+                if (response.status === 401) {
+                    // Unauthorized, show login
+                    document.getElementById('auth-overlay').style.display = 'flex';
+                    return;
+                }
+                
+                if (response.ok) {
+                    // Refresh security data
+                    fetchSecurityData(currentSessionId);
+                } else {
+                    const data = await response.json();
+                    alert(`Error: ${data.message}`);
+                }
+            } catch (error) {
+                console.error('Error removing IP from blacklist:', error);
+                alert('An error occurred while removing the IP from blacklist');
+            }
+        }
+        
+        // Add event listener for refresh button
+        document.getElementById('refresh-btn').addEventListener('click', function() {
+            this.querySelector('#refresh-icon').classList.add('spin');
+            
+            // If we have a current session, use it, otherwise show auth overlay
+            if (currentSessionId) {
+                fetchSecurityData(currentSessionId);
+            } else {
+                document.getElementById('auth-overlay').style.display = 'flex';
+            }
+        });
+        
+        // Add a currentSessionId variable to store the session
+        let currentSessionId = null;
+
+        // Initial setup - always show the auth overlay when the page loads
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('auth-overlay').style.display = 'flex';
+        });
+    </script>
+</body>
+</html> 
