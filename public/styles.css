@@ -18,17 +18,89 @@
     --v4-color: #20c997;
     --primary-color: #0d6efd;
     --success-color: #28a745;
+    /* Additional variables for better contrast */
+    --hover-highlight: rgba(255, 255, 255, 0.1);
+    --search-highlight: rgba(255, 206, 84, 0.3);
+    --text-dark: #212529;
 }
 
 /* Badge tweaks for dark theme */
 .badge-in {
-    background-color: rgba(13, 110, 253, 0.3);
-    color: #d9e6ff;
+    background-color: rgba(13, 110, 253, 0.5);
+    color: #ffffff;
+    font-weight: 600;
 }
 
 .badge-out {
-    background-color: rgba(32, 201, 151, 0.3);
-    color: #d5fff3;
+    background-color: rgba(32, 201, 151, 0.5);
+    color: #ffffff;
+    font-weight: 600;
+}
+
+/* Make sure all text in dark theme is visible */
+.text-dark {
+    color: var(--text-color) !important;
+}
+
+/* Ensure form controls have visible text */
+.form-control, .form-select {
+    background-color: var(--input-bg);
+    border-color: var(--input-border);
+    color: var(--text-color);
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: var(--input-bg);
+    color: var(--text-color);
+    border-color: var(--primary-color);
+}
+
+/* Ensure text in dropdowns and selects is visible */
+.form-control::placeholder {
+    color: var(--text-muted);
+}
+
+/* Better hover contrast for table rows */
+.table-hover tbody tr:hover {
+    background-color: var(--hover-highlight);
+}
+
+/* Fix table visibility */
+.table {
+    margin-bottom: 0;
+    color: var(--text-color);
+}
+
+/* Override Bootstrap background colors for better readability */
+.bg-warning {
+    background-color: #f0ad4e !important;
+}
+
+.bg-warning.text-dark {
+    color: #000 !important;
+}
+
+/* Improve search highlight visibility */
+.search-highlight {
+    background-color: var(--search-highlight);
+    padding: 0 2px;
+    border-radius: 2px;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+/* Override hover styles for data-usage.html */
+.ip-row:hover {
+    background-color: var(--hover-highlight) !important;
+}
+
+.sortable:hover {
+    background-color: var(--hover-highlight) !important;
+}
+
+/* Override any Bootstrap inline styles */
+[class*="text-muted"] {
+    color: var(--text-muted) !important;
 }
 
 .connection-url-card {
@@ -165,11 +237,6 @@ nav ul li a.active {
     margin-bottom: 20px;
 }
 
-.table {
-    margin-bottom: 0;
-    color: var(--text-color);
-}
-
 .table th {
     font-weight: 600;
     background-color: var(--card-header);
@@ -183,22 +250,6 @@ nav ul li a.active {
 
 .table-striped tbody tr:nth-of-type(odd) {
     background-color: var(--table-stripe);
-}
-
-.table-hover tbody tr:hover {
-    background-color: var(--hover-bg);
-}
-
-/* Form controls */
-.form-control, .form-select {
-    background-color: var(--input-bg);
-    border-color: var(--input-border);
-    color: var(--text-color);
-}
-
-.form-control:focus, .form-select:focus {
-    background-color: var(--input-bg);
-    color: var(--text-color);
 }
 
 /* Animated refresh icon */
@@ -414,4 +465,14 @@ nav ul li a.active {
 
 .footer a:hover {
     color: var(--gradient-end);
+}
+
+/* Improve connections detail legend */
+.connection-details-legend {
+    color: #ffffff !important;
+}
+
+/* Exception for specific places where we need higher contrast */
+.card-header .text-muted {
+    color: #e1e1e1 !important;
 } 
