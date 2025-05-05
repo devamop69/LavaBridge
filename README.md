@@ -1,4 +1,4 @@
-# Lavalink Proxy
+# LavaBridge
 
 A TCP tunneling proxy that routes clients to the appropriate Lavalink v3 or v4 server based on request headers or URL path.
 
@@ -53,8 +53,8 @@ The proxy also supports the HAProxy PROXY protocol, allowing it to receive conne
 
 1. Clone this repository
    ```
-   git clone https://github.com/yourusername/lavalink-proxy.git
-   cd lavalink-proxy
+   git clone https://github.com/devamop69/LavaBridge.git
+   cd LavaBridge
    ```
 
 2. Install dependencies

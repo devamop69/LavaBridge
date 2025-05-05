@@ -1,5 +1,5 @@
 /**
- * Lavalink Proxy Development Start Script
+ * LavaBridge Development Start Script
  * Uses nodemon for auto-restart on file changes
  */
 
@@ -24,7 +24,7 @@ const outputLogStream = fs.createWriteStream(
   { flags: 'a' }
 );
 
-console.log('Starting Lavalink Proxy in development mode...');
+console.log('Starting LavaBridge in development mode...');
 
 // Start nodemon process
 const nodemon = spawn('nodemon', ['src/index.js'], {

@@ -1,5 +1,5 @@
 /**
- * Lavalink Proxy Start Script with Error Handling
+ * LavaBridge Start Script with Error Handling
  */
 
 const { spawn } = require('child_process');
@@ -23,7 +23,7 @@ const outputLogStream = fs.createWriteStream(
   { flags: 'a' }
 );
 
-console.log('Starting Lavalink Proxy...');
+console.log('Starting LavaBridge...');
 
 // Start the proxy process
 const proxy = spawn('node', ['src/index.js'], {

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Lavalink Proxy - Data Usage</title>
+    <title>LavaBridge - Data Usage</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/styles.css">
     <style>
@@ -22,7 +22,7 @@
             transition: all 0.2s ease;
         }
         .ip-row:hover {
-            background-color: #f8f9fa;
+            background-color: var(--hover-highlight);
         }
         .bandwidth-wrapper {
             position: relative;
@@ -35,19 +35,20 @@
             border-radius: 12px;
         }
         .rate-high {
-            color: #dc3545 !important;
+            color: #ff5252 !important;
             font-weight: bold;
         }
         .rate-medium {
-            color: #fd7e14 !important;
+            color: #ffab40 !important;
             font-weight: bold;
         }
         /* Search styles */
         .search-highlight {
-            background-color: #fff3cd;
+            background-color: var(--search-highlight);
             padding: 0 2px;
             border-radius: 2px;
             font-weight: bold;
+            color: white;
         }
         #search-results-count {
             font-size: 0.8rem;
@@ -70,7 +71,7 @@
             user-select: none;
         }
         .sortable:hover {
-            background-color: #f8f9fa;
+            background-color: var(--hover-highlight);
         }
         .sort-icon {
             display: inline-block;
@@ -81,22 +82,22 @@
         .sort-asc .sort-icon::after {
             content: '▲';
             font-size: 10px;
-            color: #666;
+            color: var(--text-muted);
         }
         .sort-desc .sort-icon::after {
             content: '▼';
             font-size: 10px;
-            color: #666;
+            color: var(--text-muted);
         }
         .active-sort {
-            background-color: #f0f0f0;
+            background-color: var(--hover-highlight);
         }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Lavalink Proxy</h1>
+            <h1>LavaBridge</h1>
             <nav>
                 <ul>
                     <li><a href="/">Dashboard</a></li>
@@ -198,7 +199,7 @@
         </div>
 
         <div class="footer">
-            <p>Lavalink Proxy - A TCP tunneling proxy for Lavalink v3 and v4 servers</p>
+            <p>LavaBridge - A TCP tunneling proxy for Lavalink v3 and v4 servers</p>
             <p><span id="last-updated">Last updated: Never</span></p>
         </div>
     </div>

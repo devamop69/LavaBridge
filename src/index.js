@@ -513,7 +513,7 @@ app.get('/data-usage', (req, res) => {
 app.get('/api/version', (req, res) => {
   res.json({
     version: '1.0.0',
-    name: 'Lavalink Proxy',
+    name: 'LavaBridge',
     description: 'A TCP tunneling proxy for Lavalink v3 and v4 servers'
   });
 });

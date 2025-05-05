@@ -1,5 +1,5 @@
 /**
- * Utility functions for the Lavalink proxy
+ * Utility functions for the LavaBridge
  */
 
 /**
