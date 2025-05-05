@@ -5,9 +5,10 @@ require('dotenv').config();
 const config = {
   proxy: {
     host: process.env.PROXY_HOST || '0.0.0.0',
-    port: parseInt(process.env.PROXY_PORT || '2345', 10),
-    webPort: parseInt(process.env.WEB_PORT || '2346', 10),
+    port: parseInt(process.env.PROXY_PORT || '6923', 10),
+    webPort: parseInt(process.env.WEB_PORT || '6980', 10),
     password: process.env.PROXY_PASSWORD || 'DevamOP',
+    enableProxyProtocol: process.env.ENABLE_PROXY_PROTOCOL === 'true' || false,
   },
   // Backend server configuration
   lavalink: {

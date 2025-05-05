@@ -24,9 +24,9 @@ All configuration is managed through environment variables:
 
 - **Proxy Settings**:
   - PROXY_HOST: Host to bind the proxy server (default: 0.0.0.0)
-  - PROXY_PORT: Port for the proxy server (default: 2345)
+  - PROXY_PORT: Port for the proxy server (default: 6923)
   - PROXY_PASSWORD: Password for authentication (default: DevamOP)
-  - WEB_PORT: Port for the web interface (default: 2346)
+  - WEB_PORT: Port for the web interface (default: 6980)
 - **Lavalink v3 Settings**: Configured in index.js for v3 backend
 - **Lavalink v4 Settings**: Configured in index.js for v4 backend
 

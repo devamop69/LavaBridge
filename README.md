@@ -15,7 +15,6 @@ A TCP tunneling proxy that routes clients to the appropriate Lavalink v3 or v4 s
 - JSON-based persistent storage
 - Configuration via environment variables
 - Security monitoring with IP blacklisting
-- Dark mode for the web interface
 - Search and sort functionality for connection tables
 - Multiple data rate display formats (bytes/s, bits/s, packets/s)
 
@@ -57,8 +56,8 @@ This proxy creates a direct TCP tunnel between clients and backend Lavalink serv
    ```
    # Proxy configuration
    PROXY_HOST=0.0.0.0
-   PROXY_PORT=2345
-   WEB_PORT=2346
+   PROXY_PORT=6923
+   WEB_PORT=6980
    PROXY_PASSWORD=DevamOP
 
    # Backend server configuration
@@ -108,12 +107,12 @@ This proxy creates a direct TCP tunnel between clients and backend Lavalink serv
    ```
 
 3. Connect your Lavalink clients to the proxy using this format:
-   - For v3 clients: `ws://proxy-host:2345/v3`
-   - For v4 clients: `ws://proxy-host:2345/v4`
+   - For v3 clients: `ws://proxy-host:6923/v3`
+   - For v4 clients: `ws://proxy-host:6923/v4`
 
 4. Access the web interface at:
    ```
-   http://proxy-host:2346
+   http://proxy-host:6980
    ```
 
 ## Web Interface
@@ -153,7 +152,7 @@ The proxy includes a web interface that provides real-time monitoring of:
   - User agent tracking
   - Manual IP blacklisting controls
 
-The web interface automatically refreshes every 5 seconds and can be manually refreshed as needed. Dark mode is available across all pages to reduce eye strain in low-light environments.
+The web interface automatically refreshes every 5 seconds and can be manually refreshed as needed.
 
 ## Client Configuration Examples
 
@@ -164,7 +163,7 @@ const manager = new Manager({
   nodes: [
     {
       host: "your-proxy-host",
-      port: 2345,
+      port: 6923,
       password: "DevamOP",
       secure: false,
       identifier: "v3Node",
@@ -188,7 +187,7 @@ const shoukaku = new Shoukaku(new Connectors.DiscordJS(client), {
   servers: [
     {
       name: 'v4Node',
-      url: 'your-proxy-host:2345/v4',  // Note the /v4 path
+      url: 'your-proxy-host:6923/v4',  // Note the /v4 path
       auth: 'DevamOP',
       secure: false,
     }
@@ -205,9 +204,9 @@ The proxy can be configured entirely through environment variables:
 
 ### Proxy Settings
 - `PROXY_HOST`: Host to bind the proxy server (default: 0.0.0.0)
-- `PROXY_PORT`: Port for the proxy server (default: 2345)
+- `PROXY_PORT`: Port for the proxy server (default: 6923)
 - `PROXY_PASSWORD`: Password for the proxy server (default: DevamOP)
-- `WEB_PORT`: Port for the web interface (default: 2346)
+- `WEB_PORT`: Port for the web interface (default: 6980)
 
 ### Backend Settings
 - `LAVALINK_V3_HOST`: Hostname/IP for the Lavalink v3 server

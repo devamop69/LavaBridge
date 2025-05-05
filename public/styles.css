@@ -14,98 +14,12 @@
     --input-border: #ced4da;
 }
 
-[data-theme="dark"] {
-    /* Dark theme variables */
-    --bg-color: #121212;
-    --text-color: #e0e0e0;
-    --text-muted: #adb5bd;
-    --border-color: #2d3133;
-    --card-bg: #1e1e1e;
-    --card-header: #252525;
-    --hover-bg: #2d2d2d;
-    --table-stripe: rgba(255, 255, 255, 0.05);
-    --shadow-color: rgba(0, 0, 0, 0.3);
-    --nav-hover: #333333;
-    --input-bg: #2d2d2d;
-    --input-border: #444444;
-}
-
 body {
     padding: 20px;
     background-color: var(--bg-color);
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     color: var(--text-color);
     transition: background-color 0.3s ease, color 0.3s ease;
-}
-
-/* Theme toggle styles */
-.theme-switch-wrapper {
-    display: flex;
-    align-items: center;
-}
-
-.theme-switch {
-    display: inline-block;
-    height: 24px;
-    position: relative;
-    width: 48px;
-}
-
-.theme-switch input {
-    display: none;
-}
-
-.slider {
-    background-color: #ccc;
-    bottom: 0;
-    cursor: pointer;
-    left: 0;
-    position: absolute;
-    right: 0;
-    top: 0;
-    transition: .4s;
-    border-radius: 34px;
-}
-
-.slider:before {
-    background-color: white;
-    bottom: 4px;
-    content: "";
-    height: 16px;
-    left: 4px;
-    position: absolute;
-    transition: .4s;
-    width: 16px;
-    border-radius: 50%;
-}
-
-input:checked + .slider {
-    background-color: #2196F3;
-}
-
-input:checked + .slider:before {
-    transform: translateX(24px);
-}
-
-.theme-switch-wrapper span {
-    margin-left: 10px;
-    font-size: 0.9rem;
-}
-
-.sun-icon, .moon-icon {
-    width: 16px;
-    height: 16px;
-    display: inline-block;
-    margin-right: 8px;
-    vertical-align: middle;
-}
-
-.sun-icon {
-    color: #f9d71c;
-}
-
-.moon-icon {
-    color: #ccc;
 }
 
 /* Navigation styles */
@@ -246,7 +160,7 @@ nav ul li a.active {
     background-color: var(--hover-bg);
 }
 
-/* Form controls in dark mode */
+/* Form controls */
 .form-control, .form-select {
     background-color: var(--input-bg);
     border-color: var(--input-border);

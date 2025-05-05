@@ -42,7 +42,7 @@ The Lavalink Proxy now includes data rate monitoring and backend health checks:
    - Automatic cleanup of resources on disconnection
 
 3. **Connection Monitoring**:
-   - Web interface on separate port (default: 2346)
+   - Web interface on separate port (default: 6980)
    - Real-time connection stats with version breakdown
    - Detailed connection information with uptime tracking
    - Per-IP data usage tracking and visualization

@@ -656,8 +656,9 @@ const server = net.createServer((clientSocket) => {
   let version = null;
   let authenticated = false;
   const clientId = `conn_${Date.now()}_${Math.floor(Math.random() * 1000)}`;
-  const clientAddress = `${clientSocket.remoteAddress}:${clientSocket.remotePort}`;
-  const clientIp = clientSocket.remoteAddress;
+  let clientAddress = `${clientSocket.remoteAddress}:${clientSocket.remotePort}`;
+  let clientIp = clientSocket.remoteAddress;
+  let proxyProtocolComplete = false;
   
   // Initialize data counters
   let bytesFromClient = 0;
@@ -665,6 +666,53 @@ const server = net.createServer((clientSocket) => {
   
   log(`New connection from ${clientAddress} (ID: ${clientId})`);
   security.securityLog('info', `New connection`, { ip: clientIp, id: clientId });
+  
+  // Function to parse PROXY protocol header
+  // PROXY protocol format: "PROXY" + TCP4/TCP6 + client-ip + proxy-ip + client-port + proxy-port + CRLF
+  function parseProxyProtocol(data) {
+    // Check for PROXY protocol signature
+    const dataStr = data.toString('utf8', 0, Math.min(data.length, 108)); // Max PROXY header is 107 bytes
+    
+    if (!dataStr.startsWith('PROXY ')) {
+      return { isProxy: false };
+    }
+    
+    try {
+      // Extract parts from PROXY protocol line
+      const endOfLine = dataStr.indexOf('\r\n');
+      if (endOfLine === -1) {
+        return { isProxy: true, complete: false }; // Incomplete header
+      }
+      
+      const parts = dataStr.substring(0, endOfLine).split(' ');
+      
+      if (parts.length < 6) {
+        log(`Invalid PROXY protocol header format`);
+        return { isProxy: false };
+      }
+      
+      const [, proto, srcIp, destIp, srcPort, destPort] = parts;
+      
+      if (proto !== 'TCP4' && proto !== 'TCP6') {
+        log(`Unsupported PROXY protocol: ${proto}`);
+        return { isProxy: false };
+      }
+      
+      log(`Detected PROXY protocol: ${srcIp}:${srcPort} via ${destIp}:${destPort}`);
+      
+      // Return parsed information with remaining data
+      return {
+        isProxy: true,
+        complete: true,
+        originalIp: srcIp,
+        originalPort: parseInt(srcPort, 10),
+        remainingData: data.slice(endOfLine + 2) // +2 for CRLF
+      };
+    } catch (err) {
+      logError(`Error parsing PROXY protocol: ${err.message}`, err);
+      return { isProxy: false };
+    }
+  }
   
   // Check if IP is blacklisted
   const blacklistInfo = security.checkIPBlacklist(clientIp);
@@ -720,6 +768,50 @@ const server = net.createServer((clientSocket) => {
   
   // Handle data from client
   clientSocket.on('data', (data) => {
+    // Check for PROXY protocol header on first data packet
+    if (!proxyProtocolComplete && buffer.length === 0) {
+      // Only process PROXY protocol if it's enabled in config
+      if (config.proxy.enableProxyProtocol) {
+        const proxyResult = parseProxyProtocol(data);
+        
+        if (proxyResult.isProxy) {
+          if (!proxyResult.complete) {
+            // Incomplete PROXY header, wait for more data
+            buffer = Buffer.concat([buffer, data]);
+            return;
+          }
+          
+          // Update client information with the original client IP
+          const originalIp = proxyResult.originalIp;
+          const originalPort = proxyResult.originalPort;
+          
+          log(`PROXY protocol: Original client IP: ${originalIp}:${originalPort}`);
+          
+          // Update tracking variables with original client information
+          clientIp = originalIp;
+          clientAddress = `${originalIp}:${originalPort}`;
+          
+          // Replace data with remaining data after PROXY header
+          data = proxyResult.remainingData;
+          
+          // Check if the original IP is blacklisted
+          const blacklistInfo = security.checkIPBlacklist(clientIp);
+          if (blacklistInfo) {
+            security.securityLog('warn', `Rejected blacklisted IP connection (via PROXY)`, { 
+              ip: clientIp, 
+              id: clientId,
+              reason: blacklistInfo.reason
+            });
+            
+            clientSocket.end();
+            return;
+          }
+        }
+      }
+      
+      proxyProtocolComplete = true;
+    }
+    
     // Track bytes from client
     bytesFromClient += data.length;
     updateIpDataUsage(clientIp, data.length, 0);
