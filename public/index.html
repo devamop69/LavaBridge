@@ -560,15 +560,15 @@
                     const outRateClass = getRateClass(conn.bytesOutRate);
                     
                     row.innerHTML = `
-                        <td>${conn.id}</td>
-                        <td>
+                        <td style="color: #ffffff;">${conn.id}</td>
+                        <td style="color: #ffffff;">
                             <span class="connection-status status-online"></span>
                             ${conn.clientAddress}
                         </td>
-                        <td>${conn.backend}</td>
+                        <td style="color: #ffffff;">${conn.backend}</td>
                         <td><span class="badge badge-${conn.version}">${conn.version}</span></td>
-                        <td>${formatDate(conn.startTime)}</td>
-                        <td>${formatUptime(conn.uptime)}</td>
+                        <td style="color: #ffffff;">${formatDate(conn.startTime)}</td>
+                        <td style="color: #ffffff;">${formatUptime(conn.uptime)}</td>
                         <td>
                             <span class="data-badge badge-in">${formatBytes(conn.bytesIn)}</span>
                             <span class="data-badge badge-out">${formatBytes(conn.bytesOut)}</span>
