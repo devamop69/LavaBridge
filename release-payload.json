@@ -1,7 +1,0 @@
-{
-  "tag_name": "v1.0",
-  "name": "LavaBridge 1.0",
-  "body": "# LavaBridge 1.0 Release\n\nThe initial release of LavaBridge, a TCP tunneling proxy that routes Lavalink clients to either v3 or v4 backends based on version detection.\n\n## Features\n\n- Automatic routing to Lavalink v3 or v4 backends\n- Low-level TCP tunneling for minimal overhead\n- Modern dark-themed UI with responsive design\n- Connection URL display with copy functionality\n- Real-time connection monitoring\n- Data usage tracking and visualization\n- Security dashboard with IP blacklisting\n- Health monitoring for backend servers\n- Configuration via environment variables\n\n## Configuration\n\nSee the env.sample file for all available configuration options.\n\n## Client Connection Examples\n\n### For v3 clients:\n```\nws://your-server:6923/v3\n```\n\n### For v4 clients:\n```\nws://your-server:6923/v4\n```\n\n## Project Links\n\n- [GitHub Repository](https://github.com/devamop69/LavaBridge)\n- [Documentation](https://github.com/devamop69/LavaBridge/blob/main/README.md)",
-  "draft": false,
-  "prerelease": false
-} 

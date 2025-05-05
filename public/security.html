@@ -251,16 +251,16 @@
                         <p>Recent security violations detected by the system.</p>
                         <div id="violations-container">
                             <p>Loading violations data...</p>
-                        </div>
                     </div>
                 </div>
+            </div>
 
                 <div class="card">
-                    <div class="card-header bg-secondary text-white">User Agent Tracking</div>
-                    <div class="card-body">
-                        <p>User agents connecting to your LavaBridge server.</p>
-                        <div id="user-agents-container">
-                            <p>Loading user agent data...</p>
+                <div class="card-header bg-secondary text-white">User Agent Tracking</div>
+                <div class="card-body">
+                    <p>User agents connecting to your LavaBridge server.</p>
+                    <div id="user-agents-container">
+                        <p>Loading user agent data...</p>
                         </div>
                     </div>
                 </div>
@@ -367,7 +367,7 @@
             document.getElementById('whitelist-count').textContent = data.whitelistedIPs;
             document.getElementById('violations-count').textContent = data.totalViolations;
             document.getElementById('agents-count').textContent = data.userAgentsCount;
-            
+
             console.log("Whitelist data received:", data.whitelist);
             
             // Display blacklist data
@@ -399,14 +399,14 @@
                 
                 html += `<div class="blacklist-item">
                     <div class="d-flex justify-content-between align-items-center">
-                        <h5>${item.ip}</h5>
+                            <h5>${item.ip}</h5>
                         <span class="${statusClass}">Expires: ${expiresText}</span>
-                    </div>
-                    <p><strong>Reason:</strong> ${item.reason || 'No reason provided'}</p>
+                        </div>
+                        <p><strong>Reason:</strong> ${item.reason || 'No reason provided'}</p>
                     <p><strong>Added:</strong> ${formatTimestamp(item.blacklistedAt)}</p>
                     <button class="btn btn-sm btn-success" onclick="unblacklistIP('${item.ip}')">
-                        Remove from Blacklist
-                    </button>
+                            Remove from Blacklist
+                        </button>
                 </div>`;
             });
             
@@ -457,7 +457,7 @@
                     <div class="d-flex justify-content-between align-items-center">
                         <h5>${item.ip}</h5>
                         <span class="badge bg-danger">${item.count} Violations</span>
-                    </div>
+                        </div>
                     <p><strong>First:</strong> ${formatTimestamp(item.firstViolation)}</p>
                     <p><strong>Last:</strong> ${formatTimestamp(item.lastViolation)}</p>
                     <div class="d-flex gap-2">
@@ -483,8 +483,8 @@
             agents.forEach(agent => {
                 html += `<tr>
                     <td>${agent.userAgent}</td>
-                    <td>${agent.count}</td>
-                    <td>${agent.uniqueIps}</td>
+                        <td>${agent.count}</td>
+                        <td>${agent.uniqueIps}</td>
                     <td>${formatTimestamp(agent.firstSeen)}</td>
                     <td>${formatTimestamp(agent.lastSeen)}</td>
                 </tr>`;

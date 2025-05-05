@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 /**
  * LavaBridge Start Script with Error Handling
+ * Production mode with 1GB memory limit and garbage collection
  */
 
 const { spawn } = require('child_process');
@@ -23,12 +25,18 @@ const outputLogStream = fs.createWriteStream(
   { flags: 'a' }
 );
 
-console.log('Starting LavaBridge...');
+console.log('Starting LavaBridge in production mode...');
 
-// Start the proxy process
-const proxy = spawn('node', ['src/index.js'], {
+// Start the proxy process with 1GB memory heap limit and enable garbage collection
+const proxy = spawn('node', [
+  '--max-old-space-size=1024',
+  '--expose-gc',
+  '--nouse-idle-notification', // Disable idle garbage collection
+  'src/index.js'
+], {
   stdio: ['inherit', 'pipe', 'pipe'],
-  detached: false
+  detached: false,
+  env: { ...process.env, NODE_ENV: 'production' }
 });
 
 // Log proxy process ID
@@ -57,6 +65,15 @@ proxy.on('exit', (code, signal) => {
   // Close log streams
   errorLogStream.end();
   outputLogStream.end();
+  
+  // Auto restart if crashed but not intentionally terminated
+  if (code !== 0 && !['SIGINT', 'SIGTERM'].includes(signal)) {
+    console.log('Process crashed. Automatically restarting in 5 seconds...');
+    setTimeout(() => {
+      console.log('Restarting...');
+      require('./start.js');
+    }, 5000);
+  }
 });
 
 // Handle process signals

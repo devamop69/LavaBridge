@@ -1,7 +1,7 @@
 {
-  "name": "lavabridge",
-  "version": "1.0.0",
-  "description": "A TCP tunneling proxy that routes clients to Lavalink v3 or v4 backends",
+  "name": "lavalink_proxy",
+  "version": "2.0.0",
+  "description": "A pure TCP proxy for Lavalink v3 and v4 servers",
   "main": "src/index.js",
   "scripts": {
     "start": "node start.js",
@@ -21,7 +21,7 @@
   "dependencies": {
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.5.0",
-    "express": "^4.21.2",
+    "express": "^4.18.2",
     "express-session": "^1.18.1"
   },
   "devDependencies": {

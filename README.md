@@ -1,4 +1,4 @@
-# LavaBridge
+# LavaBridge v2.0
 
 A TCP tunneling proxy that routes clients to the appropriate Lavalink v3 or v4 server based on request headers or URL path.
 
@@ -24,6 +24,8 @@ A TCP tunneling proxy that routes clients to the appropriate Lavalink v3 or v4 s
   - Automatic temporary blocking for suspicious behavior
   - Recursive loop protection in security logging
   - Configurable thresholds and limits
+  - Improved error handling for "write after end" and ECONNRESET errors
+  - Memory optimization with 1GB heap limit by default
 - Connection management:
   - Automatic connection cleanup on restart
   - Active user protection during DDoS attacks
@@ -338,6 +340,97 @@ The web interface includes various user experience enhancements:
 - Modern glass UI elements with gradient colors
 - Animated hover effects for interactive elements
 
+## DDoS Protection and High-Load Handling
+
+LavaBridge includes comprehensive protection against DDoS attacks and mechanisms to handle high-load scenarios effectively.
+
+### Protection Mechanisms
+
+- **Connection Burst Detection**: Automatically identifies and blocks rapid connection attempts from the same IP
+- **Trusted User System**: Legitimate users maintain access during attacks through behavior-based trust scoring
+- **CPU Load Management**: Dynamically adjusts connection acceptance based on server load
+- **Aggressive Packet Dropping**: Prevents TCP socket exhaustion during SYN flood attacks
+- **Memory Optimization**: Periodic cleanup of data structures and emergency recovery during high load
+
+### Handling "write after end" and ECONNRESET Errors
+
+The proxy implements robust error handling for common issues during DDoS attacks:
+
+1. **Socket Error Handling**: All socket operations are wrapped in try/catch blocks
+2. **Safe Socket Closing**: Dedicated functions ensure sockets are closed properly even during attacks
+3. **Error Logging**: Structured logging helps identify attack patterns
+4. **Rate Limiting**: Reduces connection attempts from problematic sources
+
+### Memory Optimization
+
+To prevent memory-related crashes during prolonged attacks:
+
+1. **Increased Heap Size**: Server starts with 1GB heap limit by default
+2. **Garbage Collection**: Periodic garbage collection frees unused resources
+3. **Data Structure Cleanup**: Automatically removes expired entries from tracking maps
+4. **Connection Limiting**: Prevents memory exhaustion from too many simultaneous connections
+
+### Quick Configuration Guide
+
+For production environments facing frequent attacks:
+
+```
+# Essential DDoS protection settings
+DDOS_PROTECTION=true
+AUTO_BLACKLIST=true
+AGGRESSIVE_PACKET_DROPPING=true
+MAX_CONNECTIONS_TOTAL=200
+HIGH_LOAD_THRESHOLD=70
+```
+
+For running with increased memory during attacks:
+
+```bash
+# 2GB heap allocation
+NODE_OPTIONS="--max-old-space-size=2048 --expose-gc" node start.js
+```
+
+For monitoring during attacks:
+
+```bash
+# Check security logs
+grep "Fast rejection" logs/security-*.log
+
+# Monitor memory usage
+ps -o pid,rss,command | grep node
+```
+
+### Advanced DDoS Protection Strategies
+
+#### IP Reputation System
+
+Enable the IP reputation system to track and score client behavior:
+
+```
+IP_REPUTATION_ENABLED=true
+IP_REPUTATION_BAD_SCORE_THRESHOLD=-10
+IP_REPUTATION_GOOD_SCORE_THRESHOLD=5
+```
+
+#### Multiple Layer Defense
+
+For best protection, implement multiple layers:
+
+1. **Cloud-level DDoS protection** (Cloudflare, AWS Shield)
+2. **Hardware firewall** with connection rate limiting
+3. **LavaBridge built-in protection**
+4. **Application-level validation**
+
+#### Performance Tuning
+
+Fine-tune Node.js for high-performance scenarios:
+
+```bash
+# Production performance optimizations
+NODE_ENV=production
+NODE_OPTIONS="--max-old-space-size=4096 --expose-gc --max-http-header-size=16384 --no-warnings --max-semi-space-size=64"
+```
+
 ## License
 
-ISC 
+MIT 

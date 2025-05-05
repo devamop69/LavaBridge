@@ -162,6 +162,18 @@ function blacklistIP(ip, reason, duration = null) {
  * @returns {boolean} true if the IP is whitelisted
  */
 function isWhitelisted(ip) {
+  if (!ip) {
+    return false;
+  }
+
+  // Make sure whitelist is loaded
+  if (!ipWhitelist || ipWhitelist.size === 0) {
+    // Reload whitelist from storage if it's empty
+    ipWhitelist = db.objectToMap(
+      db.loadData(config.database.ipWhitelistDb, {})
+    );
+  }
+
   return ipWhitelist.has(ip);
 }
 
@@ -421,16 +433,28 @@ function trackConnectionBurst(ip) {
   
   // Skip for trusted active users - their connection patterns are legitimate
   if (isActiveTrustedUser(ip)) {
+    updateTrustedUserActivity(ip); // Update activity timestamp
     return false;
   }
   
   const now = Date.now();
   
+  // Get server load
+  const cpuUsage = process.cpuUsage();
+  const totalCpuTime = cpuUsage.user + cpuUsage.system;
+  // Calculate CPU load percentage since last call (rough approximation)
+  const cpuLoad = global.lastCpuTime ? (totalCpuTime - global.lastCpuTime) / 1000000 * 100 : 0;
+  global.lastCpuTime = totalCpuTime;
+  
+  // Under high CPU load, be more aggressive with burst detection
+  const highLoad = cpuLoad > 70; // CPU usage above 70%
+  
   // Initialize tracking for new IPs
   if (!connectionBursts.has(ip)) {
     connectionBursts.set(ip, {
       burstCount: 0,
-      detectionTime: null
+      detectionTime: null,
+      cpuLoad: cpuLoad
     });
   }
   
@@ -443,23 +467,42 @@ function trackConnectionBurst(ip) {
   const lastTime = lastConnectionTime.get(ip);
   const timeDiff = now - lastTime;
   
+  // Store current CPU load for this IP
+  burst.cpuLoad = cpuLoad;
+  
+  // Adjust burst interval threshold based on CPU load
+  const burstIntervalThreshold = highLoad 
+    ? config.security.ddosProtection.burstIntervalMs * 1.5 // More aggressive under high load
+    : config.security.ddosProtection.burstIntervalMs;
+  
   // If connections come too fast, count as burst
-  if (timeDiff < config.security.ddosProtection.burstIntervalMs) {
+  if (timeDiff < burstIntervalThreshold) {
     burst.burstCount++;
     
     // If we've detected multiple bursts in short succession, consider it a potential attack
-    if (burst.burstCount > config.security.ddosProtection.burstThreshold) {
+    // Adjust threshold based on load
+    const burstThreshold = highLoad 
+      ? Math.max(2, config.security.ddosProtection.burstThreshold * 0.7) // Lower threshold under high load
+      : config.security.ddosProtection.burstThreshold;
+      
+    if (burst.burstCount > burstThreshold) {
       if (!burst.detectionTime) {
         burst.detectionTime = now;
         securityLog('warn', `Connection burst detected from IP ${ip}`, { 
           ip, 
           burstCount: burst.burstCount, 
-          timeBetweenConnections: timeDiff 
+          timeBetweenConnections: timeDiff,
+          cpuLoad: cpuLoad.toFixed(2) + '%'
         });
       }
       
       // If sustained bursting, consider blacklisting
-      if (burst.burstCount > config.security.ddosProtection.burstBlacklistThreshold && config.security.autoBlacklist) {
+      // Adjust blacklist threshold based on load
+      const blacklistThreshold = highLoad
+        ? config.security.ddosProtection.burstBlacklistThreshold * 0.7
+        : config.security.ddosProtection.burstBlacklistThreshold;
+        
+      if (burst.burstCount > blacklistThreshold && config.security.autoBlacklist) {
         blacklistIP(ip, `Automatic blacklist due to connection burst (${burst.burstCount} connections)`, 
                   config.security.ddosProtection.temporaryBlockDuration || config.security.blacklistDuration);
       }
@@ -496,15 +539,93 @@ function addTrustedActiveUser(ip) {
     activeTrustedUsers.set(ip, {
       firstSeen: new Date(),
       lastActivity: new Date(),
-      successfulConnections: 1
+      successfulConnections: 1,
+      connectionIds: new Set(), // Track unique connection IDs
+      priority: 0 // Priority level for this user
     });
   } else {
     // Update existing record
     const record = activeTrustedUsers.get(ip);
     record.lastActivity = new Date();
     record.successfulConnections++;
+    
+    // Increase priority for users with more connections
+    if (record.successfulConnections > 5) {
+      record.priority = Math.min(10, Math.floor(record.successfulConnections / 5));
+    }
+    
     activeTrustedUsers.set(ip, record);
   }
+  
+  // Immediately persist trusted users to disk for recovery after restart
+  if (activeTrustedUsers.size % 10 === 0) { // Don't write too frequently
+    persistTrustedUsers();
+  }
+}
+
+/**
+ * Persist trusted users to disk for recovery after restart
+ */
+function persistTrustedUsers() {
+  try {
+    // Convert to a format that can be serialized (remove Set objects)
+    const persistableUsers = {};
+    activeTrustedUsers.forEach((user, ip) => {
+      persistableUsers[ip] = {
+        firstSeen: user.firstSeen,
+        lastActivity: user.lastActivity,
+        successfulConnections: user.successfulConnections,
+        priority: user.priority || 0
+      };
+    });
+    
+    // Save to disk using configured path
+    db.saveData(config.database.trustedUsersDb, persistableUsers);
+  } catch (err) {
+    console.error('Failed to persist trusted users:', err);
+  }
+}
+
+/**
+ * Load trusted users from disk on startup
+ */
+function loadTrustedUsers() {
+  try {
+    const savedUsers = db.loadData(config.database.trustedUsersDb, {});
+    
+    // Convert to Map and restore properties
+    Object.entries(savedUsers).forEach(([ip, userData]) => {
+      activeTrustedUsers.set(ip, {
+        firstSeen: new Date(userData.firstSeen),
+        lastActivity: new Date(userData.lastActivity),
+        successfulConnections: userData.successfulConnections,
+        connectionIds: new Set(),
+        priority: userData.priority || 0
+      });
+    });
+    
+    console.log(`Loaded ${activeTrustedUsers.size} trusted users from disk`);
+  } catch (err) {
+    console.error('Failed to load trusted users:', err);
+  }
+}
+
+// Load trusted users on startup
+loadTrustedUsers();
+
+/**
+ * Add a specific connection ID to a trusted user
+ * @param {string} ip - IP address
+ * @param {string} connectionId - Unique connection identifier
+ */
+function addConnectionToTrustedUser(ip, connectionId) {
+  if (!activeTrustedUsers.has(ip)) {
+    addTrustedActiveUser(ip);
+  }
+  
+  const record = activeTrustedUsers.get(ip);
+  record.connectionIds.add(connectionId);
+  activeTrustedUsers.set(ip, record);
 }
 
 /**
@@ -520,8 +641,11 @@ function isActiveTrustedUser(ip) {
   const record = activeTrustedUsers.get(ip);
   const now = Date.now();
   
-  // Check if the user has been active recently (within last 10 minutes)
-  const isRecentlyActive = (now - record.lastActivity.getTime()) < 10 * 60 * 1000;
+  // Higher priority users get longer activity window
+  const activityWindow = 10 * 60 * 1000 * (1 + (record.priority || 0) * 0.5);
+  
+  // Check if the user has been active recently (within activity window)
+  const isRecentlyActive = (now - record.lastActivity.getTime()) < activityWindow;
   
   // Check if user has established multiple successful connections
   const hasMultipleConnections = record.successfulConnections >= 2;
@@ -547,13 +671,23 @@ function updateTrustedUserActivity(ip) {
  */
 function cleanupTrustedActiveUsers() {
   const now = Date.now();
+  let removed = 0;
   
   activeTrustedUsers.forEach((record, ip) => {
-    // Remove users inactive for more than 30 minutes
-    if (now - record.lastActivity.getTime() > 30 * 60 * 1000) {
+    // Priority users get longer lifetime
+    const inactivityThreshold = 30 * 60 * 1000 * (1 + (record.priority || 0) * 0.5);
+    
+    // Remove users inactive for more than their threshold period
+    if (now - record.lastActivity.getTime() > inactivityThreshold) {
       activeTrustedUsers.delete(ip);
+      removed++;
     }
   });
+  
+  if (removed > 0) {
+    console.log(`Cleaned up ${removed} inactive trusted users`);
+    persistTrustedUsers();
+  }
 }
 
 /**
@@ -633,6 +767,8 @@ function checkActiveAttack(ip) {
   
   // Always allow trusted active users to connect, even during attacks
   if (isActiveTrustedUser(ip)) {
+    // Update activity timestamp to keep user active
+    updateTrustedUserActivity(ip);
     return false;
   }
   
@@ -644,15 +780,25 @@ function checkActiveAttack(ip) {
   const burst = connectionBursts.get(ip);
   const now = Date.now();
   
-  // More aggressive packet dropping based on burst count
+  // Get CPU load from the burst data
+  const cpuLoad = burst.cpuLoad || 0;
+  const highLoad = cpuLoad > 70;
+  
+  // More aggressive packet dropping based on burst count and CPU load
   // If we've exceeded the DDoS threshold, drop all packets for the configured duration
   if (burst.detectionTime && burst.burstCount > config.security.ddosProtection.burstThreshold) {
+    // Under high load, extend packet drop duration
+    const dropDuration = highLoad 
+      ? config.security.ddosProtection.packetDropDuration * 1.5
+      : config.security.ddosProtection.packetDropDuration;
+      
     // Check if detection was recent (within configured packet drop duration)
-    if (now - burst.detectionTime < config.security.ddosProtection.packetDropDuration) {
+    if (now - burst.detectionTime < dropDuration) {
       securityLog('warn', `Active DDoS attack detected from IP ${ip}, dropping packet`, { 
         ip, 
         burstCount: burst.burstCount,
-        remainingBlockTime: Math.floor((burst.detectionTime + config.security.ddosProtection.packetDropDuration - now) / 1000) + 's'
+        cpuLoad: cpuLoad.toFixed(2) + '%',
+        remainingBlockTime: Math.floor((burst.detectionTime + dropDuration - now) / 1000) + 's'
       });
       return true;
     }
@@ -660,17 +806,24 @@ function checkActiveAttack(ip) {
   
   // Progressive packet dropping if enabled
   if (config.security.ddosProtection.progressiveDropping) {
+    // Adjust minimum threshold based on CPU load
+    const minBurstThreshold = highLoad
+      ? Math.max(1, config.security.ddosProtection.minimumBurstForDropping * 0.7)
+      : config.security.ddosProtection.minimumBurstForDropping;
+      
     // Only apply if burst count is above the minimum threshold
-    if (burst.burstCount >= config.security.ddosProtection.minimumBurstForDropping) {
-      // Calculate drop probability based on burst count
-      // Higher burst count = higher chance of packet dropping
-      const dropProbability = Math.min(0.95, burst.burstCount / 
-                             (config.security.ddosProtection.burstThreshold * 1.5));
+    if (burst.burstCount >= minBurstThreshold) {
+      // Calculate drop probability based on burst count and CPU load
+      // Higher burst count and CPU load = higher chance of packet dropping
+      const loadFactor = highLoad ? 1.5 : 1;
+      const dropProbability = Math.min(0.95, (burst.burstCount / 
+                             (config.security.ddosProtection.burstThreshold * 1.5)) * loadFactor);
       
       if (Math.random() < dropProbability) {
         securityLog('warn', `Preventive packet dropping for potential DDoS from IP ${ip}`, { 
           ip, 
           burstCount: burst.burstCount,
+          cpuLoad: cpuLoad.toFixed(2) + '%',
           dropProbability: dropProbability.toFixed(2)
         });
         return true;
@@ -721,12 +874,170 @@ function verifyWhitelist() {
   // Update the active whitelist
   ipWhitelist = freshWhitelist;
   
+  // Check all entries
+  if (ipWhitelist.size > 0) {
+    securityLog('info', 'Current whitelist entries:', { count: ipWhitelist.size });
+    ipWhitelist.forEach((info, ip) => {
+      securityLog('info', `Whitelisted IP: ${ip}`, { reason: info.reason, addedBy: info.addedBy });
+    });
+  }
+  
   securityLog('info', `Whitelist verification complete`, { 
     count: ipWhitelist.size,
     invalidRemoved: invalidEntries
   });
   
   return ipWhitelist.size;
+}
+
+// Initialize global CPU tracking
+global.lastCpuTime = null;
+
+// Monitor CPU usage periodically to detect high load situations
+let lastCpuMonitorTime = Date.now();
+setInterval(() => {
+  const cpuUsage = process.cpuUsage();
+  const totalCpuTime = cpuUsage.user + cpuUsage.system;
+  const cpuLoad = global.lastCpuTime ? (totalCpuTime - global.lastCpuTime) / 1000000 * 100 : 0;
+  global.lastCpuTime = totalCpuTime;
+  
+  // Calculate time since last check
+  const now = Date.now();
+  const elapsed = now - lastCpuMonitorTime;
+  lastCpuMonitorTime = now;
+  
+  // Log CPU usage if it's high
+  if (cpuLoad > 70) {
+    securityLog('warn', `High CPU usage detected`, { 
+      cpuLoad: cpuLoad.toFixed(2) + '%',
+      interval: elapsed + 'ms',
+      activeConnections: activeTrustedUsers.size
+    });
+    
+    // Under extreme CPU load, be more aggressive with burst detection and packet dropping
+    if (cpuLoad > 90) {
+      securityLog('error', `Extreme CPU usage detected - enabling emergency protection measures`, {
+        cpuLoad: cpuLoad.toFixed(2) + '%'
+      });
+      
+      // Temporarily reduce burst thresholds to protect the server
+      config.security.ddosProtection.burstThreshold = Math.max(2, Math.floor(config.security.ddosProtection.burstThreshold * 0.5));
+      config.security.ddosProtection.minimumBurstForDropping = 1;
+    }
+  }
+}, 5000); // Check every 5 seconds
+
+/**
+ * Simple check if a connection should be accepted, optimized for performance
+ * @param {string} ip - IP address to check
+ * @returns {boolean} true if connection should be accepted, false otherwise
+ */
+function shouldAcceptConnection(ip) {
+  // Handle undefined/invalid IPs (can happen during high-volume attacks)
+  if (!ip || ip === 'undefined') {
+    return false;
+  }
+
+  try {
+    // Whitelist check (fastest path)
+    if (isWhitelisted(ip)) {
+      return true;
+    }
+    
+    // Blacklist check (second fastest)
+    const blacklistInfo = checkIPBlacklist(ip);
+    if (blacklistInfo) {
+      return false;
+    }
+  
+    // Trusted user check (allows legitimate users during attacks)
+    if (isActiveTrustedUser(ip)) {
+      updateTrustedUserActivity(ip);
+      return true;
+    }
+    
+    // Server overload protection
+    try {
+      // Only check CPU under high load
+      if (global.lastCpuTime) {
+        const cpuUsage = process.cpuUsage();
+        const totalCpuTime = cpuUsage.user + cpuUsage.system;
+        const cpuLoad = (totalCpuTime - global.lastCpuTime) / 1000000 * 100;
+        
+        // Under extreme load, only accept trusted/whitelisted users
+        if (cpuLoad > 90) {
+          return false;
+        }
+      }
+      
+      // Check overall connection count - simple threshold for server capacity
+      // This helps prevent memory exhaustion during attacks
+      if (global.activeConnections > 200) { // This requires the global to be set in index.js
+        return false;
+      }
+    } catch (err) {
+      // If any error in CPU check, fall back to connection burst check
+      console.error('Error checking server load:', err);
+    }
+    
+    // Connection burst check (for DDoS prevention)
+    const now = Date.now();
+    
+    try {
+      // Initialize tracking for new IPs
+      if (!connectionBursts.has(ip)) {
+        connectionBursts.set(ip, {
+          burstCount: 0,
+          detectionTime: null
+        });
+      }
+      
+      if (!lastConnectionTime.has(ip)) {
+        lastConnectionTime.set(ip, now);
+        return true;
+      }
+      
+      const burst = connectionBursts.get(ip);
+      const lastTime = lastConnectionTime.get(ip);
+      const timeDiff = now - lastTime;
+      
+      // If connections come too fast, count as burst
+      if (timeDiff < config.security.ddosProtection.burstIntervalMs) {
+        burst.burstCount++;
+        
+        // If we've detected multiple bursts in short succession, reject connection
+        if (burst.burstCount > config.security.ddosProtection.burstThreshold) {
+          connectionBursts.set(ip, burst);
+          lastConnectionTime.set(ip, now);
+          return false;
+        }
+      } else {
+        // Reset burst counter if connections are spread out
+        if (timeDiff > 1000) {
+          burst.burstCount = Math.max(0, burst.burstCount - 1);
+          
+          // Clear detection after a longer period of normal behavior
+          if (timeDiff > config.security.ddosProtection.burstResetMs) {
+            burst.detectionTime = null;
+          }
+        }
+      }
+      
+      connectionBursts.set(ip, burst);
+      lastConnectionTime.set(ip, now);
+    } catch (err) {
+      // In case of any error with data structures, err on the side of caution
+      console.error('Error in connection burst check:', err);
+      return false;
+    }
+    
+    return true;
+  } catch (err) {
+    // Global catch for any errors in the function
+    console.error(`Error in shouldAcceptConnection for IP ${ip}:`, err);
+    // If anything unexpected happens, reject the connection
+    return false;
+  }
 }
 
 // Export security module functions
@@ -744,6 +1055,10 @@ module.exports = {
   addTrustedActiveUser,
   updateTrustedUserActivity,
   isActiveTrustedUser,
+  addConnectionToTrustedUser,
+  persistTrustedUsers,
+  loadTrustedUsers,
+  shouldAcceptConnection,
   isWhitelisted,
   whitelistIP,
   removeFromWhitelist,

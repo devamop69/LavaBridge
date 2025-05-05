@@ -1,6 +1,8 @@
+#!/usr/bin/env node
 /**
  * LavaBridge Development Start Script
  * Uses nodemon for auto-restart on file changes
+ * Development mode with 1GB memory limit
  */
 
 const { spawn } = require('child_process');
@@ -24,16 +26,32 @@ const outputLogStream = fs.createWriteStream(
   { flags: 'a' }
 );
 
-console.log('Starting LavaBridge in development mode...');
+// Create script to run with nodemon including GC and other options
+const nodemonScript = `
+require('dotenv').config();
+process.env.NODE_ENV = 'development';
+require('./src/index.js');
+`;
 
-// Start nodemon process
-const nodemon = spawn('nodemon', ['src/index.js'], {
+const scriptPath = path.join(__dirname, 'nodemon-dev.js');
+fs.writeFileSync(scriptPath, nodemonScript);
+
+console.log('Starting LavaBridge in development mode with debugging enabled...');
+
+// Start nodemon process with 1GB memory heap limit and garbage collection
+const nodemon = spawn('nodemon', [
+  '--exec',
+  'node --max-old-space-size=1024 --expose-gc --inspect',
+  scriptPath
+], {
   stdio: 'pipe',
-  detached: false
+  detached: false,
+  env: { ...process.env, NODE_ENV: 'development' }
 });
 
 // Log proxy process ID
 console.log(`Development server started with PID: ${nodemon.pid}`);
+console.log('Debug inspector available at chrome://inspect');
 
 // Handle nodemon output
 nodemon.stdout.on('data', (data) => {
@@ -55,6 +73,13 @@ nodemon.on('exit', (code, signal) => {
   console.log(message);
   outputLogStream.write(`[${new Date().toISOString()}] ${message}\n`);
   
+  // Clean up the temporary script file
+  try {
+    fs.unlinkSync(scriptPath);
+  } catch (err) {
+    // Ignore cleanup errors
+  }
+  
   // Close log streams
   errorLogStream.end();
   outputLogStream.end();
@@ -64,6 +89,14 @@ nodemon.on('exit', (code, signal) => {
 process.on('SIGINT', () => {
   console.log('Received SIGINT. Gracefully shutting down development server...');
   nodemon.kill('SIGINT');
+  
+  // Clean up the temporary script file
+  try {
+    fs.unlinkSync(scriptPath);
+  } catch (err) {
+    // Ignore cleanup errors
+  }
+  
   setTimeout(() => {
     process.exit(0);
   }, 1000);
@@ -72,7 +105,21 @@ process.on('SIGINT', () => {
 process.on('SIGTERM', () => {
   console.log('Received SIGTERM. Gracefully shutting down development server...');
   nodemon.kill('SIGTERM');
+  
+  // Clean up the temporary script file
+  try {
+    fs.unlinkSync(scriptPath);
+  } catch (err) {
+    // Ignore cleanup errors
+  }
+  
   setTimeout(() => {
     process.exit(0);
   }, 1000);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  errorLogStream.write(`[${new Date().toISOString()}] Uncaught Exception: ${error.stack || error}\n`);
 }); 

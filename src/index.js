@@ -35,8 +35,23 @@ function logError(message, error) {
   logStream.write(logMessage);
 }
 
+// Near the beginning of the file, add a global error handler for uncaught errors
+
+// Set up global error handler for uncaught exceptions
+process.on('uncaughtException', (err) => {
+  logError(`Uncaught Exception: ${err.message}`, err);
+  // Don't exit the process, just log the error
+});
+
+// Handle unhandled rejections
+process.on('unhandledRejection', (reason, promise) => {
+  logError(`Unhandled Rejection: ${reason}`, reason);
+});
+
 // Keep track of active connections
 let activeConnections = 0;
+// Expose activeConnections to the global scope for the security module
+global.activeConnections = 0;
 
 // Load stored data or initialize new Maps
 let connectionDetails = db.objectToMap(
@@ -115,6 +130,7 @@ function formatBytesRate(bytesPerSecond, decimals = 2) {
 
 function updateConnectionCounter(change) {
   activeConnections += change;
+  global.activeConnections = activeConnections; // Update global counter
   
   // Only log the count to console, not the details
   log(`Active connections: ${activeConnections}`);
@@ -247,9 +263,8 @@ log("Connection database cleared. Starting with 0 active connections.");
 
 // Verify whitelist entries
 log("Verifying IP whitelist...");
-const whitelist = db.objectToMap(
-  db.loadData(config.database.ipWhitelistDb, {})
-);
+security.verifyWhitelist();
+const whitelist = security.getWhitelist();
 
 // Log whitelist entries
 if (whitelist.size > 0) {
@@ -261,11 +276,51 @@ if (whitelist.size > 0) {
   log("No whitelisted IPs found.");
 }
 
-// Ensure security module has the whitelist loaded
-security.verifyWhitelist();
-
 // Set up interval for data rate calculations
 setInterval(calculateDataRates, RATE_TRACKING_INTERVAL);
+
+// Memory optimization: Periodically clean up data structures during high load
+setInterval(() => {
+  // Only run aggressive cleanup if we have many connections or during high load
+  if (activeConnections > 50) {
+    log(`Running aggressive memory cleanup (${activeConnections} active connections)`);
+    
+    // Clean up old IP usage data
+    let cleanupCount = 0;
+    const now = Date.now();
+    
+    ipDataUsage.forEach((usage, ip) => {
+      // If IP has no connections and was last active more than 5 minutes ago, remove it
+      if (usage.connections <= 0 && (now - usage.lastActive) > 5 * 60 * 1000) {
+        ipDataUsage.delete(ip);
+        cleanupCount++;
+      }
+    });
+    
+    if (cleanupCount > 0) {
+      log(`Cleaned up ${cleanupCount} inactive IP usage records`);
+    }
+    
+    // Clear old connection history if memory usage is high
+    try {
+      const memoryUsage = process.memoryUsage();
+      // If using more than 80% of heap, force garbage collection through more cleanup
+      if (memoryUsage.heapUsed / memoryUsage.heapTotal > 0.8) {
+        global.gc && global.gc(); // Try to force garbage collection if available
+        log(`High memory usage: ${Math.round(memoryUsage.rss / 1024 / 1024)}MB - forcing cleanup`);
+      }
+    } catch (err) {
+      // Ignore errors for memory checks
+    }
+  }
+}, 60000); // Run every minute
+
+// Save data periodically instead of on every change
+setInterval(() => {
+  saveConnectionData();
+  saveIpUsageData();
+  saveBackendStatus();
+}, 300000); // Every 5 minutes
 
 // Function to check backend server health
 function checkBackendHealth(version) {
@@ -848,54 +903,29 @@ const server = net.createServer((clientSocket) => {
   let clientAddress = `${clientSocket.remoteAddress}:${clientSocket.remotePort}`;
   let clientIp = clientSocket.remoteAddress;
   let proxyProtocolComplete = false;
+  let socketClosed = false; // Track if socket is already closed
   
   // Initialize data counters
   let bytesFromClient = 0;
   let bytesToClient = 0;
   
+  // Safely close socket function to prevent duplicate close attempts
+  const safelyCloseSocket = (socket, reason) => {
+    if (socket && !socket.destroyed) {
+      try {
+        socket.end();
+      } catch (err) {
+        // Ignore any errors during socket closing
+      }
+    }
+  };
+  
   log(`New connection from ${clientAddress} (ID: ${clientId})`);
-  security.securityLog('info', `New connection`, { ip: clientIp, id: clientId });
   
-  // Update activity for trusted users if they attempt a new connection
-  security.updateTrustedUserActivity(clientIp);
-  
-  // First check if this IP is whitelisted - whitelisted IPs bypass all security checks
-  const isWhitelisted = security.isWhitelisted(clientIp);
-  
-  // Check for connection bursts (potential DDoS), but allow whitelisted IPs and active trusted users
-  if (!isWhitelisted && !security.isActiveTrustedUser(clientIp) && security.trackConnectionBurst(clientIp)) {
-    security.securityLog('warn', `Rejected connection due to burst pattern detection`, { ip: clientIp, id: clientId });
-    clientSocket.end();
-    return;
-  }
-  
-  // Check if IP is blacklisted
-  const blacklistInfo = security.checkIPBlacklist(clientIp);
-  if (blacklistInfo && !isWhitelisted && !security.isActiveTrustedUser(clientIp)) {
-    security.securityLog('warn', `Rejected blacklisted IP connection`, { 
-      ip: clientIp, 
-      id: clientId,
-      reason: blacklistInfo.reason
-    });
-    
-    clientSocket.end();
-    return;
-  }
-  
-  // Check connection rate limit for non-whitelisted and non-trusted users
-  if (!isWhitelisted && !security.isActiveTrustedUser(clientIp) && security.checkRateLimit(clientIp)) {
-    security.securityLog('warn', `Rejected rate-limited IP connection`, { ip: clientIp, id: clientId });
-    clientSocket.end();
-    return;
-  }
-  
-  // Get number of connections from this IP
-  const ipConnections = Array.from(connectionDetails.values())
-    .filter(conn => conn.clientIp === clientIp).length;
-  
-  // Check connection limits for non-whitelisted and non-trusted users
-  if (!isWhitelisted && !security.isActiveTrustedUser(clientIp) && !security.checkConnectionLimits(clientIp, activeConnections, ipConnections)) {
-    clientSocket.end();
+  // Fast path: Simple check if we should accept this connection
+  if (!security.shouldAcceptConnection(clientIp)) {
+    security.securityLog('warn', `Fast rejection of connection from ${clientIp}`, { ip: clientIp, id: clientId });
+    safelyCloseSocket(clientSocket, 'rejected');
     return;
   }
   
@@ -918,351 +948,229 @@ const server = net.createServer((clientSocket) => {
     });
   }
   
-  // Save IP usage data after any change
-  saveIpUsageData();
-  
   // Handle data from client
   clientSocket.on('data', (data) => {
-    // Check if the IP is whitelisted - whitelisted IPs bypass all security checks
-    const isDataWhitelisted = security.isWhitelisted(clientIp);
+    // Skip processing if socket is already being closed
+    if (socketClosed) return;
     
-    // Check if the IP has been blacklisted since connection establishment
-    const blacklistInfo = security.checkIPBlacklist(clientIp);
-    if (blacklistInfo && !isDataWhitelisted && !security.isActiveTrustedUser(clientIp)) {
-      security.securityLog('warn', `Dropping packet from blacklisted IP`, { 
-        ip: clientIp, 
-        id: clientId,
-        reason: blacklistInfo.reason,
-        packetSize: data.length
-      });
-      
-      // Close the connection to prevent further packets
-      clientSocket.end();
-      return;
-    }
-    
-    // Update activity timestamp for trusted users
-    security.updateTrustedUserActivity(clientIp);
-    
-    // Skip packet dropping for whitelisted IPs and active trusted users
-    if (!isDataWhitelisted && !security.isActiveTrustedUser(clientIp)) {
-      // Check if IP is under active DDoS attack
-      if (security.checkActiveAttack(clientIp)) {
-        security.securityLog('warn', `Dropping packet from IP under DDoS pattern`, { 
-          ip: clientIp, 
-          id: clientId,
-          packetSize: data.length
-        });
-        
-        // Don't close the connection yet, just drop the packet
+    try {
+      // Quick check if the connection is still valid
+      if (security.checkIPBlacklist(clientIp) && !security.isWhitelisted(clientIp) && !security.isActiveTrustedUser(clientIp)) {
+        safelyCloseSocket(clientSocket, 'blacklisted');
         return;
       }
-    }
-    
-    // Check for PROXY protocol header on first data packet
-    if (!proxyProtocolComplete && buffer.length === 0) {
-      // Only process PROXY protocol if it's enabled in config
-      if (config.proxy.enableProxyProtocol) {
-        const proxyResult = parseProxyProtocol(data);
-        
-        if (proxyResult.isProxy) {
-          if (!proxyResult.complete) {
-            // Incomplete PROXY header, wait for more data
-            buffer = Buffer.concat([buffer, data]);
-            return;
-          }
-          
-          // Update client information with the original client IP
-          const originalIp = proxyResult.originalIp;
-          const originalPort = proxyResult.originalPort;
-          
-          log(`PROXY protocol: Original client IP: ${originalIp}:${originalPort}`);
-          
-          // Update tracking variables with original client information
-          clientIp = originalIp;
-          clientAddress = `${originalIp}:${originalPort}`;
-          
-          // Replace data with remaining data after PROXY header
-          data = proxyResult.remainingData;
-          
-          // Re-check if the IP is whitelisted after we got the real IP
-          const isProxyWhitelisted = security.isWhitelisted(clientIp);
-          
-          // Check if the original IP is blacklisted
-          const blacklistInfo = security.checkIPBlacklist(clientIp);
-          if (blacklistInfo && !isProxyWhitelisted && !security.isActiveTrustedUser(clientIp)) {
-            security.securityLog('warn', `Rejected blacklisted IP connection (via PROXY)`, { 
-              ip: clientIp, 
-              id: clientId,
-              reason: blacklistInfo.reason
-            });
-            
-            clientSocket.end();
-            return;
-          }
+      
+      // Track bytes from client
+      bytesFromClient += data.length;
+      updateIpDataUsage(clientIp, data.length, 0);
+      
+      // If we already have a backend connection, just forward the data
+      if (backendSocket) {
+        backendSocket.write(data);
+        return;
+      }
+      
+      // Collect the data
+      buffer = Buffer.concat([buffer, data]);
+      
+      // Check if we have a complete HTTP header
+      const headerEnd = buffer.indexOf('\r\n\r\n');
+      if (headerEnd === -1) {
+        // Not enough data yet
+        return;
+      }
+      
+      // Extract the HTTP header
+      const header = buffer.slice(0, headerEnd).toString();
+      
+      // Extract User-Agent if present (for tracking only)
+      const userAgentMatch = header.match(/User-Agent:\s+([^\r\n]+)/i);
+      const userAgent = userAgentMatch ? userAgentMatch[1] : null;
+      security.trackUserAgent(clientIp, userAgent);
+      
+      // Check for version
+      if (!version) {
+        // Check URL path for version
+        if (header.includes('/v4')) {
+          version = 'v4';
+        } else if (header.includes('/v3')) {
+          version = 'v3';
+        } else {
+          version = 'v3'; // Default to v3
         }
-      }
-      
-      proxyProtocolComplete = true;
-    }
-    
-    // Track bytes from client
-    bytesFromClient += data.length;
-    updateIpDataUsage(clientIp, data.length, 0);
-    
-    // Check payload size limits
-    if (config.security.ddosProtection && config.security.ddosProtection.enabled) {
-      const maxSize = config.security.ddosProtection.maxPayloadSize;
-      if (!isDataWhitelisted && !security.isActiveTrustedUser(clientIp) && buffer.length + data.length > maxSize) {
-        security.securityLog('warn', `Payload size exceeded for IP ${clientIp}`, { 
-          ip: clientIp, 
-          id: clientId,
-          size: buffer.length + data.length,
-          maxSize: maxSize
-        });
         
-        // Close the connection
-        clientSocket.end();
-        return;
-      }
-    }
-    
-    // If connection details exist, update the bytesIn counter and check for suspicious data rates
-    if (connectionDetails.has(clientId)) {
-      const info = connectionDetails.get(clientId);
-      info.bytesIn += data.length;
-      
-      // Check for suspicious data rates (only if we have enough history)
-      if (info.bytesInRate > 0) {
-        security.checkSuspiciousDataRate(clientIp, info.bytesInRate);
+        log(`Detected version: ${version} for connection ${clientId}`);
       }
       
-      connectionDetails.set(clientId, info);
-    }
-    
-    // If we already have a backend connection, just forward the data
-    if (backendSocket) {
-      backendSocket.write(data);
-      return;
-    }
-    
-    // Collect the data
-    buffer = Buffer.concat([buffer, data]);
-    
-    // Check if we have a complete HTTP header
-    const headerEnd = buffer.indexOf('\r\n\r\n');
-    if (headerEnd === -1) {
-      // Not enough data yet
-      return;
-    }
-    
-    // Extract the HTTP header
-    const header = buffer.slice(0, headerEnd).toString();
-    
-    // Log headers if configured
-    security.logHeaders(clientIp, header);
-    
-    // Extract User-Agent if present
-    const userAgentMatch = header.match(/User-Agent:\s+([^\r\n]+)/i);
-    const userAgent = userAgentMatch ? userAgentMatch[1] : null;
-    
-    // Track and validate user agent
-    if (!security.trackUserAgent(clientIp, userAgent)) {
-      clientSocket.end();
-      return;
-    }
-    
-    // Check for version and authentication
-    if (!version) {
-      // Check URL path for version
-      if (header.includes('/v4')) {
-        version = 'v4';
-      } else if (header.includes('/v3')) {
-        version = 'v3';
-      } else {
-        version = 'v3'; // Default to v3
-      }
-      
-      log(`Detected version: ${version} for connection ${clientId}`);
-      security.securityLog('debug', `Version detection`, { ip: clientIp, id: clientId, version });
-    }
-    
-    // Check authentication
-    if (!authenticated) {
-      const authMatch = header.match(/Authorization:\s+([^\r\n]+)/i);
-      const password = authMatch ? authMatch[1].replace('Bearer ', '') : null;
-      
-      if (!password || password !== config.proxy.password) {
-        log(`Invalid authentication from ${clientSocket.remoteAddress}, closing`);
-        security.securityLog('warn', `Invalid authentication attempt`, { 
-          ip: clientIp, 
-          id: clientId,
-          providedPassword: password ? '(encrypted)' : '(none)' 
-        });
+      // Check authentication
+      if (!authenticated) {
+        const authMatch = header.match(/Authorization:\s+([^\r\n]+)/i);
+        const password = authMatch ? authMatch[1].replace('Bearer ', '') : null;
         
-        // Send 401 Unauthorized and close
-        const response = 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n';
-        clientSocket.write(response);
-        clientSocket.end();
-        return;
-      }
-      
-      authenticated = true;
-      log(`Client authenticated, establishing tunnel to ${version} backend`);
-      security.securityLog('info', `Client authenticated`, { ip: clientIp, id: clientId, version });
-      
-      // Add this IP to trusted active users since they've successfully authenticated
-      security.addTrustedActiveUser(clientIp);
-    }
-    
-    // Create connection to backend
-    const backend = config.lavalink[version];
-    const backendAddress = `${backend.host}:${backend.port}`;
-    
-    backendSocket = net.createConnection({
-      host: backend.host,
-      port: backend.port
-    }, () => {
-      log(`TCP tunnel established to ${backendAddress} for connection ${clientId}`);
-      
-      // Add to connection tracking
-      connectionDetails.set(clientId, {
-        clientAddress,
-        clientIp,
-        backend: backendAddress,
-        version,
-        startTime: new Date(),
-        bytesIn: bytesFromClient, // Initial bytes from client
-        bytesOut: 0, // No bytes sent to client yet
-        bytesInLast: bytesFromClient,
-        bytesOutLast: 0,
-        bytesInRate: 0,
-        bytesOutRate: 0,
-        rateHistory: []
-      });
-      
-      // Save the connection data to disk
-      saveConnectionData();
-      
-      // Increment active connections counter
-      updateConnectionCounter(1);
-      
-      // Send the buffered data to the backend
-      backendSocket.write(buffer);
-    });
-    
-    // Handle data flowing between pipes
-    backendSocket.on('data', (data) => {
-      // Check if the IP is whitelisted - whitelisted IPs bypass all security checks
-      const isBackendWhitelisted = security.isWhitelisted(clientIp);
-      
-      // Check if the IP has been blacklisted since connection establishment
-      const blacklistInfo = security.checkIPBlacklist(clientIp);
-      if (blacklistInfo && !isBackendWhitelisted && !security.isActiveTrustedUser(clientIp)) {
-        security.securityLog('warn', `Dropping response packet to blacklisted IP`, { 
-          ip: clientIp, 
-          id: clientId,
-          reason: blacklistInfo.reason,
-          packetSize: data.length
-        });
-        
-        // Close the connection to prevent further packets
-        if (!clientSocket.destroyed) {
+        if (!password || password !== config.proxy.password) {
+          log(`Invalid authentication from ${clientSocket.remoteAddress}, closing`);
+          const response = 'HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n';
+          clientSocket.write(response);
           clientSocket.end();
-        }
-        return;
-      }
-      
-      // Update activity timestamp for trusted users
-      security.updateTrustedUserActivity(clientIp);
-      
-      // Skip packet dropping checks for whitelisted IPs and active trusted users
-      if (!isBackendWhitelisted && !security.isActiveTrustedUser(clientIp)) {
-        // Check if IP is under active DDoS attack
-        if (security.checkActiveAttack(clientIp)) {
-          security.securityLog('warn', `Dropping response packet to IP under DDoS pattern`, { 
-            ip: clientIp, 
-            id: clientId,
-            packetSize: data.length
-          });
-          
-          // Don't close the connection yet, just drop the packet
           return;
         }
-      }
-      
-      bytesToClient += data.length;
-      
-      // Update connection details
-      if (connectionDetails.has(clientId)) {
-        const info = connectionDetails.get(clientId);
-        info.bytesOut += data.length;
-        connectionDetails.set(clientId, info);
-      }
-      
-      // Update IP usage data
-      updateIpDataUsage(clientIp, 0, data.length);
-      
-      // Send data to client
-      if (!clientSocket.destroyed) {
-        clientSocket.write(data);
-      }
-    });
-    
-    // Handle errors with the backend connection
-    backendSocket.on('error', (err) => {
-      logError(`Backend connection error for ${clientId}: ${err.message}`, err);
-      if (!clientSocket.destroyed) {
-        clientSocket.end();
-      }
-    });
-    
-    // Handle backend connection close
-    backendSocket.on('close', () => {
-      log(`Backend connection closed for ${clientId}`);
-      
-      // Update connection tracking
-      if (connectionDetails.has(clientId)) {
-        connectionDetails.delete(clientId);
         
-        // Save connection data after removal
-        saveConnectionData();
+        authenticated = true;
+        log(`Client authenticated, establishing tunnel to ${version} backend`);
         
-        // Update the connection counter
-        updateConnectionCounter(-1);
+        // Add this IP to trusted active users since they've successfully authenticated
+        security.addTrustedActiveUser(clientIp);
       }
       
-      if (!clientSocket.destroyed) {
-        clientSocket.end();
-      }
-    });
+      // Create connection to backend
+      const backend = config.lavalink[version];
+      const backendAddress = `${backend.host}:${backend.port}`;
+      
+      backendSocket = net.createConnection({
+        host: backend.host,
+        port: backend.port
+      }, () => {
+        log(`TCP tunnel established to ${backendAddress} for connection ${clientId}`);
+        
+        // Add to connection tracking
+        connectionDetails.set(clientId, {
+          clientAddress,
+          clientIp,
+          backend: backendAddress,
+          version,
+          startTime: new Date(),
+          bytesIn: bytesFromClient,
+          bytesOut: 0
+        });
+        
+        // Increment active connections counter
+        updateConnectionCounter(1);
+        
+        // Send the buffered data to the backend safely
+        try {
+          backendSocket.write(buffer);
+        } catch (err) {
+          logError(`Error sending initial data to backend for ${clientId}: ${err.message}`, err);
+          safelyCloseSocket(backendSocket, 'initial write error');
+          safelyCloseSocket(clientSocket, 'initial backend error');
+        }
+      });
+      
+      // Set timeout for backend socket too
+      backendSocket.setTimeout(120000); // 2 minutes timeout
+      backendSocket.on('timeout', () => {
+        log(`Backend connection timeout for ${clientId}`);
+        safelyCloseSocket(backendSocket, 'backend timeout');
+      });
+      
+      // Handle data flowing from backend to client with better error handling
+      backendSocket.on('data', (data) => {
+        try {
+          // Skip if client socket is closed
+          if (socketClosed || clientSocket.destroyed) return;
+          
+          bytesToClient += data.length;
+          
+          // Update connection details
+          if (connectionDetails.has(clientId)) {
+            const info = connectionDetails.get(clientId);
+            info.bytesOut += data.length;
+            connectionDetails.set(clientId, info);
+          }
+          
+          // Update IP usage data
+          updateIpDataUsage(clientIp, 0, data.length);
+          
+          // Send data to client safely
+          if (!clientSocket.destroyed) {
+            try {
+              clientSocket.write(data);
+            } catch (err) {
+              // If we can't write to the client, close both sockets
+              logError(`Error sending backend data to client for ${clientId}: ${err.message}`, err);
+              safelyCloseSocket(clientSocket, 'client write error');
+              safelyCloseSocket(backendSocket, 'client write failed');
+            }
+          }
+        } catch (err) {
+          // Catch any other errors in backend data handling
+          logError(`Error handling backend data for ${clientId}: ${err.message}`, err);
+          safelyCloseSocket(backendSocket, 'backend data error');
+          safelyCloseSocket(clientSocket, 'backend data error');
+        }
+      });
+      
+      // Handle errors with the backend connection with better handling
+      backendSocket.on('error', (err) => {
+        // Log but don't crash for common errors
+        if (err.code === 'ECONNRESET' || err.code === 'EPIPE') {
+          log(`Backend connection reset for ${clientId}`);
+        } else {
+          logError(`Backend connection error for ${clientId}: ${err.message}`, err);
+        }
+        
+        // Safely close both sockets
+        safelyCloseSocket(backendSocket, 'backend error');
+        if (!socketClosed) {
+          safelyCloseSocket(clientSocket, 'backend failure');
+        }
+      });
+      
+      // Handle backend connection close
+      backendSocket.on('close', () => {
+        log(`Backend connection closed for ${clientId}`);
+        
+        // Update connection tracking
+        if (connectionDetails.has(clientId)) {
+          connectionDetails.delete(clientId);
+          
+          // Update the connection counter
+          updateConnectionCounter(-1);
+        }
+        
+        // Safely close client socket if it's still open
+        if (!socketClosed) {
+          safelyCloseSocket(clientSocket, 'backend closed');
+        }
+      });
+    } catch (err) {
+      // Catch any errors in the data handling
+      logError(`Error handling client data for ${clientId}: ${err.message}`, err);
+      safelyCloseSocket(clientSocket, 'data handling error');
+    }
   });
   
-  // Handle client errors
+  // Handle client errors - modified with safe socket handling
   clientSocket.on('error', (err) => {
-    logError(`Client connection error for ${clientId}: ${err.message}`, err);
+    // Ignore ECONNRESET errors - these are normal during DDoS
+    if (err.code === 'ECONNRESET') {
+      log(`Client connection reset for ${clientId}`);
+    } else {
+      logError(`Client connection error for ${clientId}: ${err.message}`, err);
+    }
+    
+    socketClosed = true;
+    
+    // Safely end backend socket
     if (backendSocket && !backendSocket.destroyed) {
-      backendSocket.end();
+      safelyCloseSocket(backendSocket, 'client error');
     }
   });
   
   // Handle client close
   clientSocket.on('close', () => {
     log(`Client connection closed for ${clientId}`);
+    socketClosed = true;
     
     // Check if we need to update the counter
-    // (if backend socket was never established, we didn't increment the counter)
     if (connectionDetails.has(clientId)) {
       connectionDetails.delete(clientId);
-      
-      // Save connection data after removal
-      saveConnectionData();
-      
       updateConnectionCounter(-1);
     }
     
+    // Safely close backend socket
     if (backendSocket && !backendSocket.destroyed) {
-      backendSocket.end();
+      safelyCloseSocket(backendSocket, 'client closed');
     }
     
     // Update IP usage statistics for closed connections
@@ -1270,8 +1178,14 @@ const server = net.createServer((clientSocket) => {
       const usage = ipDataUsage.get(clientIp);
       usage.connections = Math.max(0, usage.connections - 1);
       ipDataUsage.set(clientIp, usage);
-      saveIpUsageData();
     }
+  });
+  
+  // Add timeout to automatically close idle connections
+  clientSocket.setTimeout(60000); // 1 minute timeout
+  clientSocket.on('timeout', () => {
+    log(`Client connection timeout for ${clientId}`);
+    safelyCloseSocket(clientSocket, 'timeout');
   });
 });
 
@@ -1285,4 +1199,102 @@ server.listen(config.proxy.port, config.proxy.host, () => {
   log(`Lavalink TCP Proxy running on ${config.proxy.host}:${config.proxy.port}`);
   log(`Backend v3: ${config.lavalink.v3.host}:${config.lavalink.v3.port}`);
   log(`Backend v4: ${config.lavalink.v4.host}:${config.lavalink.v4.port}`);
-}); 
+});
+
+// Add an emergency recovery function that can be called periodically
+function emergencyRecovery() {
+  try {
+    const memoryUsage = process.memoryUsage();
+    const heapUsedMB = Math.round(memoryUsage.heapUsed / 1024 / 1024);
+    const rssMB = Math.round(memoryUsage.rss / 1024 / 1024);
+    
+    log(`System status check - Memory: ${heapUsedMB}MB (heap) / ${rssMB}MB (total) - Active connections: ${activeConnections}`);
+    
+    // Check for memory issues - adjusted for 1GB heap
+    if (heapUsedMB > 800 || rssMB > 1500) { // 80% of 1GB heap or 1.5GB total memory
+      log(`CRITICAL: High memory usage detected - forcing aggressive cleanup`);
+      
+      // Force close some connections if we have too many
+      if (activeConnections > 100) {
+        log(`Closing excess connections to recover resources`);
+        let closed = 0;
+        const maxToClose = Math.floor(activeConnections * 0.2); // Close up to 20% of connections
+        
+        // Find non-whitelisted connections to close
+        connectionDetails.forEach((info, id) => {
+          if (closed >= maxToClose) return;
+          
+          const ip = info.clientIp;
+          // Don't close whitelisted or trusted connections
+          if (!security.isWhitelisted(ip) && !security.isActiveTrustedUser(ip)) {
+            // Find and close the corresponding socket (this is approximate as we don't store the socket)
+            server.getConnections((err, count) => {
+              if (err) return;
+              log(`Emergency closing connection ${id} from ${ip} to free resources`);
+            });
+            
+            // Remove from tracking
+            connectionDetails.delete(id);
+            updateConnectionCounter(-1);
+            closed++;
+          }
+        });
+        
+        log(`Emergency closed ${closed} connections`);
+      }
+      
+      // Try to force garbage collection
+      if (global.gc) {
+        log(`Forcing garbage collection`);
+        global.gc();
+      }
+    }
+  } catch (err) {
+    logError(`Error in emergency recovery: ${err.message}`, err);
+  }
+}
+
+// Run the emergency recovery every 30 seconds
+setInterval(emergencyRecovery, 30000);
+
+// Add a connection rate limiter to the server
+let connectionCounter = 0;
+let lastConnectionReset = Date.now();
+const MAX_CONNECTIONS_PER_SECOND = 50; // Adjust based on your server capacity
+
+// Add a connection rate limiter to the server itself
+const originalCreateServer = server.on;
+server.on = function(event, listener) {
+  if (event === 'connection') {
+    const wrappedListener = function(socket) {
+      // Rate limit new connections during high load
+      const now = Date.now();
+      
+      // Reset counter every second
+      if (now - lastConnectionReset > 1000) {
+        connectionCounter = 0;
+        lastConnectionReset = now;
+      }
+      
+      // Increment counter
+      connectionCounter++;
+      
+      // If we're over the limit and not in the first second of operation
+      if (connectionCounter > MAX_CONNECTIONS_PER_SECOND && process.uptime() > 1) {
+        // Drop connection immediately to preserve resources
+        socket.destroy();
+        return;
+      }
+      
+      // Call original listener
+      listener.call(this, socket);
+    };
+    
+    return originalCreateServer.call(this, event, wrappedListener);
+  }
+  
+  return originalCreateServer.call(this, event, listener);
+};
+
+// Define app version
+const APP_VERSION = '2.0.0'; 
