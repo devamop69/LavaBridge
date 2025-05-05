@@ -61,7 +61,7 @@
             border: 1px solid #ced4da;
             border-radius: 4px;
         }
-        /* Auth overlay styles */
+        /* Auth overlay styles - Updated for dark theme */
         #auth-overlay {
             position: fixed;
             top: 0;
@@ -75,22 +75,44 @@
             align-items: center;
         }
         .auth-container {
-            background-color: white;
+            background-color: var(--card-bg);
             border-radius: 8px;
             padding: 30px;
             width: 90%;
             max-width: 450px;
             box-shadow: 0 5px 15px rgba(0, 0, 0, 0.3);
+            color: var(--text-color);
+            border: 1px solid var(--border-color);
         }
         .auth-header {
             text-align: center;
             margin-bottom: 25px;
         }
+        .auth-header h2 {
+            color: var(--text-color);
+        }
+        .auth-header p {
+            color: var(--text-muted);
+        }
         .auth-form .form-group {
             margin-bottom: 20px;
         }
+        .auth-form label {
+            color: var(--text-color);
+        }
+        .auth-form input {
+            background-color: var(--input-bg);
+            border-color: var(--input-border);
+            color: var(--text-color);
+        }
+        .auth-form input:focus {
+            background-color: var(--input-bg);
+            color: var(--text-color);
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+        }
         .auth-error {
-            color: #d32f2f;
+            color: #f44336;
             text-align: center;
             margin-bottom: 15px;
             display: none;
@@ -111,7 +133,7 @@
             <form id="auth-form" class="auth-form">
                 <div class="form-group">
                     <label for="auth-password">Security Password</label>
-                    <input type="password" id="auth-password" class="form-control" placeholder="Enter security dashboard password" required>
+                    <input type="text" id="auth-password" class="form-control" placeholder="Enter security dashboard password" required>
                 </div>
                 <button type="submit" class="btn btn-danger w-100">Access Security Dashboard</button>
             </form>
@@ -187,7 +209,7 @@
                 </div>
 
                 <div class="card">
-                    <div class="card-header bg-warning text-dark">Security Violations</div>
+                    <div class="card-header bg-warning text-white">Security Violations</div>
                     <div class="card-body">
                         <p>Recent security violations detected by the system.</p>
                         <div id="violations-container">
@@ -538,4 +560,4 @@
         });
     </script>
 </body>
-</html> 
+</html>
