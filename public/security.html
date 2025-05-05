@@ -22,6 +22,11 @@
             padding-left: 10px;
             margin-bottom: 10px;
         }
+        .whitelist-item {
+            border-left: 4px solid #2196F3;
+            padding-left: 10px;
+            margin-bottom: 10px;
+        }
         .permanent {
             color: #d32f2f;
             font-weight: bold;
@@ -44,8 +49,16 @@
             background-color: #d32f2f;
             color: white;
         }
+        .whitelist-btn {
+            background-color: #2196F3;
+            color: white;
+        }
         .unblacklist-btn {
             background-color: #7cb342;
+            color: white;
+        }
+        .unwhitelist-btn {
+            background-color: #ff9800;
             color: white;
         }
         .blacklist-controls {
@@ -167,15 +180,19 @@
                 <div class="card-header bg-danger text-white">Security Overview</div>
                 <div class="card-body">
                     <div id="security-summary" class="row">
-                        <div class="col-md-4 text-center">
+                        <div class="col-md-3 text-center">
                             <h3 id="blacklist-count">0</h3>
                             <p>Blacklisted IPs</p>
                         </div>
-                        <div class="col-md-4 text-center">
+                        <div class="col-md-3 text-center">
+                            <h3 id="whitelist-count">0</h3>
+                            <p>Whitelisted IPs</p>
+                        </div>
+                        <div class="col-md-3 text-center">
                             <h3 id="violations-count">0</h3>
                             <p>Security Violations</p>
                         </div>
-                        <div class="col-md-4 text-center">
+                        <div class="col-md-3 text-center">
                             <h3 id="agents-count">0</h3>
                             <p>User Agents</p>
                         </div>
@@ -209,6 +226,26 @@
                 </div>
 
                 <div class="card">
+                    <div class="card-header bg-primary text-white">IP Whitelist</div>
+                    <div class="card-body">
+                        <p>Whitelist IP addresses to allow them even during DDoS attacks. Whitelisted IPs bypass all packet dropping and rate limits.</p>
+                        
+                        <div class="blacklist-controls">
+                            <input type="text" id="whitelist-ip" placeholder="IP Address" class="form-control">
+                            <input type="text" id="whitelist-reason" placeholder="Reason (optional)" class="form-control">
+                            <button onclick="whitelistIP()" class="btn btn-primary">Whitelist</button>
+                            <button onclick="testWhitelist()" class="btn btn-secondary">Test Display</button>
+                        </div>
+                        
+                        <div id="whitelist-container">
+                            <p>Loading whitelist data...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="security-grid">
+                <div class="card">
                     <div class="card-header bg-warning text-white">Security Violations</div>
                     <div class="card-body">
                         <p>Recent security violations detected by the system.</p>
@@ -217,14 +254,14 @@
                         </div>
                     </div>
                 </div>
-            </div>
 
-            <div class="card mt-4">
-                <div class="card-header bg-secondary text-white">User Agent Tracking</div>
-                <div class="card-body">
-                    <p>User agents connecting to your LavaBridge server.</p>
-                    <div id="user-agents-container">
-                        <p>Loading user agent data...</p>
+                <div class="card">
+                    <div class="card-header bg-secondary text-white">User Agent Tracking</div>
+                    <div class="card-body">
+                        <p>User agents connecting to your LavaBridge server.</p>
+                        <div id="user-agents-container">
+                            <p>Loading user agent data...</p>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -285,10 +322,32 @@
                 }
                 
                 const data = await response.json();
-                renderSecurityData(data);
+                
+                // If there's no whitelist data in the main response, fetch it separately
+                if (!data.whitelist || data.whitelist.length === 0) {
+                    console.log("No whitelist in main response, fetching separately");
+                    try {
+                        const whitelistResponse = await fetch('/api/security/whitelist', {
+                            headers: {
+                                'Authorization': sessionId || ''
+                            }
+                        });
+                        
+                        if (whitelistResponse.ok) {
+                            const whitelistData = await whitelistResponse.json();
+                            console.log("Separate whitelist response:", whitelistData);
+                            data.whitelist = whitelistData.whitelist || [];
+                            data.whitelistedIPs = data.whitelist.length;
+                        }
+                    } catch (whitelistError) {
+                        console.error("Error fetching whitelist separately:", whitelistError);
+                    }
+                }
+                
+                updateSecurityUI(data);
                 
                 // Update last updated time
-                document.getElementById('last-updated').textContent = 'Last updated: ' + new Date().toLocaleString();
+                document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleString()}`;
                 
                 // Remove spin animation from refresh icon
                 document.getElementById('refresh-icon').classList.remove('spin');
@@ -302,154 +361,133 @@
             }
         }
 
-        function renderSecurityData(data) {
-            // Update summary counts
+        // Update summary counts and display data
+        function updateSecurityUI(data) {
             document.getElementById('blacklist-count').textContent = data.blacklistedIPs;
+            document.getElementById('whitelist-count').textContent = data.whitelistedIPs;
             document.getElementById('violations-count').textContent = data.totalViolations;
             document.getElementById('agents-count').textContent = data.userAgentsCount;
-
-            // Render blacklist
-            renderBlacklist(data.blacklist);
             
-            // Render violations
-            renderViolations(data.violations);
+            console.log("Whitelist data received:", data.whitelist);
             
-            // Render user agents
-            renderUserAgents(data.userAgents);
+            // Display blacklist data
+            displayBlacklist(data.blacklist);
+            // Display whitelist data
+            displayWhitelist(data.whitelist);
+            // Display violations
+            displayViolations(data.violations);
+            // Display user agents
+            displayUserAgents(data.userAgents);
+            
+            // Update timestamp
+            document.getElementById('last-updated').textContent = `Last updated: ${new Date().toLocaleString()}`;
         }
-
-        function renderBlacklist(blacklist) {
+        
+        // Display the blacklist
+        function displayBlacklist(blacklist) {
             const container = document.getElementById('blacklist-container');
-            
-            if (blacklist.length === 0) {
-                container.innerHTML = '<p>No IP addresses are currently blacklisted.</p>';
+            if (!blacklist || blacklist.length === 0) {
+                container.innerHTML = '<p>No blacklisted IPs.</p>';
                 return;
             }
             
             let html = '';
-            
             blacklist.forEach(item => {
-                const isPermanent = !item.expiresAt;
-                const isExpired = item.expiresAt && new Date(item.expiresAt) < new Date();
-                const statusClass = isPermanent ? 'permanent' : (isExpired ? 'expired' : 'temporary');
-                const statusText = isPermanent ? 'Permanent' : (isExpired ? 'Expired' : formatTimeRemaining(item.expiresAt));
+                const isPermanent = item.permanent;
+                const statusClass = isPermanent ? 'permanent' : 'temporary';
+                const expiresText = isPermanent ? 'Permanent' : formatTimestamp(item.expiresAt);
                 
-                html += `
-                    <div class="blacklist-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <h5>${item.ip}</h5>
-                            <span class="${statusClass}">${statusText}</span>
-                        </div>
-                        <p><strong>Reason:</strong> ${item.reason || 'No reason provided'}</p>
-                        <p><strong>Blacklisted:</strong> ${new Date(item.blacklistedAt).toLocaleString()}</p>
-                        <button onclick="unblacklistIP('${item.ip}')" class="security-action-btn unblacklist-btn">
-                            Remove from Blacklist
-                        </button>
+                html += `<div class="blacklist-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5>${item.ip}</h5>
+                        <span class="${statusClass}">Expires: ${expiresText}</span>
                     </div>
-                `;
+                    <p><strong>Reason:</strong> ${item.reason || 'No reason provided'}</p>
+                    <p><strong>Added:</strong> ${formatTimestamp(item.blacklistedAt)}</p>
+                    <button class="btn btn-sm btn-success" onclick="unblacklistIP('${item.ip}')">
+                        Remove from Blacklist
+                    </button>
+                </div>`;
             });
             
             container.innerHTML = html;
         }
         
-        function formatTimeRemaining(expiresAt) {
-            const now = new Date();
-            const expires = new Date(expiresAt);
-            const diff = expires - now;
+        // Display the whitelist
+        function displayWhitelist(whitelist) {
+            const container = document.getElementById('whitelist-container');
+            console.log("displayWhitelist called with:", whitelist);
             
-            if (diff <= 0) {
-                return 'Expired';
-            }
-            
-            const hours = Math.floor(diff / (1000 * 60 * 60));
-            const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-            
-            if (hours > 24) {
-                const days = Math.floor(hours / 24);
-                return `${days} day${days !== 1 ? 's' : ''} remaining`;
-            }
-            
-            if (hours > 0) {
-                return `${hours}h ${minutes}m remaining`;
-            }
-            
-            return `${minutes}m remaining`;
-        }
-        
-        function renderViolations(violations) {
-            const container = document.getElementById('violations-container');
-            
-            if (violations.length === 0) {
-                container.innerHTML = '<p>No security violations have been detected.</p>';
+            if (!whitelist || whitelist.length === 0) {
+                container.innerHTML = '<p>No whitelisted IPs.</p>';
                 return;
             }
             
             let html = '';
-            
-            violations.forEach(violation => {
-                const reasons = violation.reasons || [];
-                const lastViolation = new Date(violation.lastViolation).toLocaleString();
-                
-                html += `
-                    <div class="violation-item">
-                        <div class="d-flex justify-content-between align-items-start">
-                            <h5>${violation.ip}</h5>
-                            <span class="badge bg-danger">${violation.count} violations</span>
-                        </div>
-                        <p><strong>Last violation:</strong> ${lastViolation}</p>
-                `;
-                
-                if (reasons.length > 0) {
-                    html += '<p><strong>Recent reasons:</strong></p><ul>';
-                    reasons.slice(-3).forEach(reason => {
-                        html += `<li>${reason.reason} (${new Date(reason.timestamp).toLocaleString()})</li>`;
-                    });
-                    html += '</ul>';
-                }
-                
-                html += `
-                        <button onclick="blacklistIPDirect('${violation.ip}', 'Manually blacklisted after violations', 86400000)" class="security-action-btn blacklist-btn">
-                            Blacklist for 24h
-                        </button>
+            whitelist.forEach(item => {
+                console.log("Processing whitelist item:", item);
+                html += `<div class="whitelist-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5>${item.ip}</h5>
+                        <span class="text-primary">Always Allowed</span>
                     </div>
-                `;
+                    <p><strong>Reason:</strong> ${item.reason || 'No reason provided'}</p>
+                    <p><strong>Added:</strong> ${formatTimestamp(item.whitelistedAt)} by ${item.addedBy || 'Admin'}</p>
+                    <button class="btn btn-sm btn-warning" onclick="unwhitelistIP('${item.ip}')">
+                        Remove from Whitelist
+                    </button>
+                </div>`;
+            });
+            
+            console.log("HTML generated for whitelist:", html);
+            container.innerHTML = html;
+        }
+        
+        // Display violations
+        function displayViolations(violations) {
+            const container = document.getElementById('violations-container');
+            if (!violations || violations.length === 0) {
+                container.innerHTML = '<p>No security violations detected.</p>';
+                return;
+            }
+            
+            let html = '';
+            violations.forEach(item => {
+                html += `<div class="violation-item">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <h5>${item.ip}</h5>
+                        <span class="badge bg-danger">${item.count} Violations</span>
+                    </div>
+                    <p><strong>First:</strong> ${formatTimestamp(item.firstViolation)}</p>
+                    <p><strong>Last:</strong> ${formatTimestamp(item.lastViolation)}</p>
+                    <div class="d-flex gap-2">
+                        <button class="btn btn-sm btn-danger" onclick="blacklistIPDirect('${item.ip}', 'Violating security rules', 86400000)">Blacklist 24h</button>
+                        <button class="btn btn-sm btn-primary" onclick="whitelistIPDirect('${item.ip}', 'Manually approved')">Whitelist</button>
+                    </div>
+                </div>`;
             });
             
             container.innerHTML = html;
         }
         
-        function renderUserAgents(userAgents) {
+        // Display user agents
+        function displayUserAgents(agents) {
             const container = document.getElementById('user-agents-container');
-            
-            if (userAgents.length === 0) {
-                container.innerHTML = '<p>No user agents have been tracked yet.</p>';
+            if (!agents || agents.length === 0) {
+                container.innerHTML = '<p>No user agents tracked yet.</p>';
                 return;
             }
             
-            let html = '<div class="table-responsive"><table class="table table-striped table-hover">';
-            html += `
-                <thead>
-                    <tr>
-                        <th>User Agent</th>
-                        <th>First Seen</th>
-                        <th>Last Seen</th>
-                        <th>Connections</th>
-                        <th>Unique IPs</th>
-                    </tr>
-                </thead>
-                <tbody>
-            `;
+            let html = '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>User Agent</th><th>Count</th><th>IPs</th><th>First Seen</th><th>Last Seen</th></tr></thead><tbody>';
             
-            userAgents.forEach(agent => {
-                html += `
-                    <tr>
-                        <td>${agent.userAgent || '<empty>'}</td>
-                        <td>${new Date(agent.firstSeen).toLocaleString()}</td>
-                        <td>${new Date(agent.lastSeen).toLocaleString()}</td>
-                        <td>${agent.count}</td>
-                        <td>${agent.uniqueIps}</td>
-                    </tr>
-                `;
+            agents.forEach(agent => {
+                html += `<tr>
+                    <td>${agent.userAgent}</td>
+                    <td>${agent.count}</td>
+                    <td>${agent.uniqueIps}</td>
+                    <td>${formatTimestamp(agent.firstSeen)}</td>
+                    <td>${formatTimestamp(agent.lastSeen)}</td>
+                </tr>`;
             });
             
             html += '</tbody></table></div>';
@@ -557,7 +595,172 @@
         // Initial setup - always show the auth overlay when the page loads
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('auth-overlay').style.display = 'flex';
+            
+            // Verify the whitelist container exists
+            const whitelistContainer = document.getElementById('whitelist-container');
+            if (!whitelistContainer) {
+                console.error("Whitelist container element not found!");
+            } else {
+                console.log("Whitelist container found in DOM");
+                whitelistContainer.innerHTML = '<p>Please login to view whitelist data</p>';
+            }
         });
+
+        // Whitelist an IP address
+        async function whitelistIP() {
+            const ip = document.getElementById('whitelist-ip').value.trim();
+            const reason = document.getElementById('whitelist-reason').value.trim();
+            
+            if (!ip) {
+                alert('Please enter an IP address');
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/security/whitelist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': currentSessionId
+                    },
+                    body: JSON.stringify({ ip, reason })
+                });
+                
+                const data = await response.json();
+                alert(data.message);
+                
+                // Clear form and reload data
+                document.getElementById('whitelist-ip').value = '';
+                document.getElementById('whitelist-reason').value = '';
+                fetchSecurityData(currentSessionId);
+                
+            } catch (error) {
+                console.error('Error whitelisting IP:', error);
+                alert('Error whitelisting IP: ' + error.message);
+            }
+        }
+        
+        // Whitelist an IP directly from the violations list
+        async function whitelistIPDirect(ip, reason) {
+            try {
+                const response = await fetch('/api/security/whitelist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': currentSessionId
+                    },
+                    body: JSON.stringify({ ip, reason })
+                });
+                
+                const data = await response.json();
+                alert(data.message);
+                fetchSecurityData(currentSessionId);
+                
+            } catch (error) {
+                console.error('Error whitelisting IP:', error);
+                alert('Error whitelisting IP: ' + error.message);
+            }
+        }
+        
+        // Remove an IP from the whitelist
+        async function unwhitelistIP(ip) {
+            if (!confirm(`Are you sure you want to remove ${ip} from the whitelist?`)) {
+                return;
+            }
+            
+            try {
+                const response = await fetch('/api/security/unwhitelist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': currentSessionId
+                    },
+                    body: JSON.stringify({ ip })
+                });
+                
+                const data = await response.json();
+                alert(data.message);
+                fetchSecurityData(currentSessionId);
+                
+            } catch (error) {
+                console.error('Error removing IP from whitelist:', error);
+                alert('Error removing IP from whitelist: ' + error.message);
+            }
+        }
+        
+        // Blacklist an IP directly from the violations list
+        async function blacklistIPDirect(ip, reason, duration) {
+            try {
+                const response = await fetch('/api/security/blacklist', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': currentSessionId
+                    },
+                    body: JSON.stringify({ ip, reason, duration })
+                });
+                
+                const data = await response.json();
+                alert(data.message);
+                fetchSecurityData(currentSessionId);
+                
+            } catch (error) {
+                console.error('Error blacklisting IP:', error);
+                alert('Error blacklisting IP: ' + error.message);
+            }
+        }
+
+        // Utility to format timestamps in a consistent way
+        function formatTimestamp(timestamp) {
+            if (!timestamp) return 'N/A';
+            try {
+                const date = new Date(timestamp);
+                if (isNaN(date.getTime())) return 'Invalid Date';
+                return date.toLocaleString();
+            } catch (e) {
+                return 'Invalid Date';
+            }
+        }
+
+        // Add a new function to test whitelist display
+        function testWhitelist() {
+            // Create test whitelist data
+            const testData = [
+                {
+                    ip: "192.168.1.100",
+                    reason: "Test whitelist entry 1",
+                    addedBy: "admin",
+                    whitelistedAt: new Date().toISOString()
+                },
+                {
+                    ip: "10.0.0.50",
+                    reason: "Test whitelist entry 2",
+                    addedBy: "system",
+                    whitelistedAt: new Date().toISOString()
+                }
+            ];
+            
+            console.log("Displaying test whitelist data:", testData);
+            displayWhitelist(testData);
+            
+            // Also fetch the whitelist API to see what's there
+            fetch('/api/security/whitelist', {
+                headers: {
+                    'Authorization': currentSessionId || ''
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log("Direct whitelist API response:", data);
+                if (data.whitelist && data.whitelist.length > 0) {
+                    console.log("API has whitelist entries, displaying those too");
+                    displayWhitelist(data.whitelist);
+                }
+            })
+            .catch(error => {
+                console.error("Error fetching whitelist API:", error);
+            });
+        }
     </script>
 </body>
 </html>

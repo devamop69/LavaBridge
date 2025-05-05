@@ -20,6 +20,11 @@ let ipBlacklist = db.objectToMap(
   db.loadData(config.database.ipBlacklistDb, {})
 );
 
+// Load IP whitelist from storage
+let ipWhitelist = db.objectToMap(
+  db.loadData(config.database.ipWhitelistDb, {})
+);
+
 // Keep track of connection attempts by IP
 let connectionAttempts = new Map();
 let securityViolations = new Map();
@@ -31,6 +36,9 @@ let isLogging = false;
 // Connection burst tracking (to detect potential DDoS)
 let connectionBursts = new Map();
 let lastConnectionTime = new Map();
+
+// Keep track of trusted active users
+let activeTrustedUsers = new Map();
 
 /**
  * Log security related events
@@ -149,11 +157,83 @@ function blacklistIP(ip, reason, duration = null) {
 }
 
 /**
+ * Check if an IP is whitelisted
+ * @param {string} ip - IP address to check
+ * @returns {boolean} true if the IP is whitelisted
+ */
+function isWhitelisted(ip) {
+  return ipWhitelist.has(ip);
+}
+
+/**
+ * Add an IP to the whitelist
+ * @param {string} ip - IP address to whitelist
+ * @param {string} reason - Reason for whitelisting
+ * @param {string} addedBy - Who added this IP to the whitelist
+ */
+function whitelistIP(ip, reason, addedBy) {
+  // Don't add if already whitelisted
+  if (ipWhitelist.has(ip)) {
+    console.log(`IP ${ip} is already whitelisted, updating information`);
+  }
+  
+  // Add to whitelist
+  ipWhitelist.set(ip, {
+    reason: reason || 'Manual whitelist',
+    addedBy: addedBy || 'admin',
+    whitelistedAt: new Date()
+  });
+  
+  // Save whitelist to disk
+  db.saveData(config.database.ipWhitelistDb, db.mapToObject(ipWhitelist));
+  
+  // Log the whitelist addition
+  securityLog('info', `IP ${ip} has been whitelisted`, { 
+    ip, 
+    reason: reason || 'Manual whitelist',
+    addedBy: addedBy || 'admin'
+  });
+  
+  // If the IP was blacklisted, remove it from blacklist
+  if (ipBlacklist.has(ip)) {
+    ipBlacklist.delete(ip);
+    db.saveData(config.database.ipBlacklistDb, db.mapToObject(ipBlacklist));
+    securityLog('info', `IP ${ip} removed from blacklist due to whitelisting`, { ip });
+  }
+}
+
+/**
+ * Remove an IP from the whitelist
+ * @param {string} ip - IP address to remove from whitelist
+ * @returns {boolean} true if removal was successful
+ */
+function removeFromWhitelist(ip) {
+  if (!ipWhitelist.has(ip)) {
+    return false;
+  }
+  
+  ipWhitelist.delete(ip);
+  db.saveData(config.database.ipWhitelistDb, db.mapToObject(ipWhitelist));
+  securityLog('info', `IP ${ip} removed from whitelist`, { ip });
+  return true;
+}
+
+/**
  * Check if an IP is blacklisted
  * @param {string} ip - IP address to check
  * @returns {Object|null} Blacklist info or null if not blacklisted
  */
 function checkIPBlacklist(ip) {
+  // If IP is whitelisted, it cannot be blacklisted
+  if (isWhitelisted(ip)) {
+    return null;
+  }
+  
+  // Active trusted users bypass blacklist checks
+  if (isActiveTrustedUser(ip)) {
+    return null;
+  }
+
   if (!ipBlacklist.has(ip)) {
     return null;
   }
@@ -177,6 +257,16 @@ function checkIPBlacklist(ip) {
  * @returns {boolean} true if rate limit exceeded, false otherwise
  */
 function checkRateLimit(ip) {
+  // Whitelisted IPs bypass rate limits
+  if (isWhitelisted(ip)) {
+    return false;
+  }
+  
+  // Active trusted users also bypass rate limits
+  if (isActiveTrustedUser(ip)) {
+    return false;
+  }
+
   const now = Date.now();
   const rateWindow = config.security.rateWindowMs;
   const limit = config.security.connectionRateLimit;
@@ -215,6 +305,16 @@ function checkRateLimit(ip) {
  * @returns {boolean} true if connection should be allowed, false otherwise
  */
 function checkConnectionLimits(ip, totalConnections, ipConnections) {
+  // Whitelisted IPs bypass connection limits
+  if (isWhitelisted(ip)) {
+    return true;
+  }
+  
+  // Active trusted users also bypass connection limits
+  if (isActiveTrustedUser(ip)) {
+    return true;
+  }
+
   // Check total connection limit
   if (totalConnections >= config.security.maxConnectionsTotal) {
     securityLog('warn', `Total connection limit reached`, { 
@@ -314,6 +414,16 @@ function trackConnectionBurst(ip) {
     return false;
   }
   
+  // Skip for whitelisted IPs
+  if (isWhitelisted(ip)) {
+    return false;
+  }
+  
+  // Skip for trusted active users - their connection patterns are legitimate
+  if (isActiveTrustedUser(ip)) {
+    return false;
+  }
+  
   const now = Date.now();
   
   // Initialize tracking for new IPs
@@ -376,6 +486,77 @@ function trackConnectionBurst(ip) {
 }
 
 /**
+ * Add an IP to the active trusted users list
+ * This prevents packet dropping for legitimate users during DDoS attacks
+ * @param {string} ip - IP address to add to trusted list
+ */
+function addTrustedActiveUser(ip) {
+  // Only add if we're not already tracking this IP
+  if (!activeTrustedUsers.has(ip)) {
+    activeTrustedUsers.set(ip, {
+      firstSeen: new Date(),
+      lastActivity: new Date(),
+      successfulConnections: 1
+    });
+  } else {
+    // Update existing record
+    const record = activeTrustedUsers.get(ip);
+    record.lastActivity = new Date();
+    record.successfulConnections++;
+    activeTrustedUsers.set(ip, record);
+  }
+}
+
+/**
+ * Check if an IP is in the trusted active users list
+ * @param {string} ip - IP address to check
+ * @returns {boolean} true if the IP is trusted
+ */
+function isActiveTrustedUser(ip) {
+  if (!activeTrustedUsers.has(ip)) {
+    return false;
+  }
+  
+  const record = activeTrustedUsers.get(ip);
+  const now = Date.now();
+  
+  // Check if the user has been active recently (within last 10 minutes)
+  const isRecentlyActive = (now - record.lastActivity.getTime()) < 10 * 60 * 1000;
+  
+  // Check if user has established multiple successful connections
+  const hasMultipleConnections = record.successfulConnections >= 2;
+  
+  return isRecentlyActive && hasMultipleConnections;
+}
+
+/**
+ * Update activity timestamp for a trusted active user
+ * @param {string} ip - IP address to update
+ */
+function updateTrustedUserActivity(ip) {
+  if (activeTrustedUsers.has(ip)) {
+    const record = activeTrustedUsers.get(ip);
+    record.lastActivity = new Date();
+    activeTrustedUsers.set(ip, record);
+  }
+}
+
+/**
+ * Clean up expired trusted active users
+ * Called during the regular cleanup intervals
+ */
+function cleanupTrustedActiveUsers() {
+  const now = Date.now();
+  
+  activeTrustedUsers.forEach((record, ip) => {
+    // Remove users inactive for more than 30 minutes
+    if (now - record.lastActivity.getTime() > 30 * 60 * 1000) {
+      activeTrustedUsers.delete(ip);
+    }
+  });
+}
+
+/**
  * Clean up expired entries from various maps to prevent memory leaks
  */
 function cleanupExpiredData() {
@@ -419,12 +600,134 @@ function cleanupExpiredData() {
     }
   });
   
+  // Cleanup expired trusted active users
+  cleanupTrustedActiveUsers();
+  
   // Save blacklist to disk after cleanup
   db.saveData(config.database.ipBlacklistDb, db.mapToObject(ipBlacklist));
 }
 
 // Set up periodic cleanup
 setInterval(cleanupExpiredData, 3600000); // Run every hour
+
+/**
+ * Check if an IP is currently under a suspected DDoS burst pattern
+ * @param {string} ip - IP address to check
+ * @returns {boolean} true if packets should be dropped, false otherwise
+ */
+function checkActiveAttack(ip) {
+  // Skip if DDoS protection is disabled
+  if (!config.security.ddosProtection || !config.security.ddosProtection.enabled) {
+    return false;
+  }
+  
+  // Skip if aggressive packet dropping is disabled
+  if (!config.security.ddosProtection.aggressivePacketDropping) {
+    return false;
+  }
+  
+  // Whitelisted IPs are never considered under attack
+  if (isWhitelisted(ip)) {
+    return false;
+  }
+  
+  // Always allow trusted active users to connect, even during attacks
+  if (isActiveTrustedUser(ip)) {
+    return false;
+  }
+  
+  // If IP is not being tracked for bursts, it's not under attack
+  if (!connectionBursts.has(ip)) {
+    return false;
+  }
+  
+  const burst = connectionBursts.get(ip);
+  const now = Date.now();
+  
+  // More aggressive packet dropping based on burst count
+  // If we've exceeded the DDoS threshold, drop all packets for the configured duration
+  if (burst.detectionTime && burst.burstCount > config.security.ddosProtection.burstThreshold) {
+    // Check if detection was recent (within configured packet drop duration)
+    if (now - burst.detectionTime < config.security.ddosProtection.packetDropDuration) {
+      securityLog('warn', `Active DDoS attack detected from IP ${ip}, dropping packet`, { 
+        ip, 
+        burstCount: burst.burstCount,
+        remainingBlockTime: Math.floor((burst.detectionTime + config.security.ddosProtection.packetDropDuration - now) / 1000) + 's'
+      });
+      return true;
+    }
+  }
+  
+  // Progressive packet dropping if enabled
+  if (config.security.ddosProtection.progressiveDropping) {
+    // Only apply if burst count is above the minimum threshold
+    if (burst.burstCount >= config.security.ddosProtection.minimumBurstForDropping) {
+      // Calculate drop probability based on burst count
+      // Higher burst count = higher chance of packet dropping
+      const dropProbability = Math.min(0.95, burst.burstCount / 
+                             (config.security.ddosProtection.burstThreshold * 1.5));
+      
+      if (Math.random() < dropProbability) {
+        securityLog('warn', `Preventive packet dropping for potential DDoS from IP ${ip}`, { 
+          ip, 
+          burstCount: burst.burstCount,
+          dropProbability: dropProbability.toFixed(2)
+        });
+        return true;
+      }
+    }
+  }
+  
+  return false;
+}
+
+/**
+ * Verify the whitelist entries and reload them from the database
+ * Does basic validation of whitelist entries and logs the current whitelist status
+ */
+function verifyWhitelist() {
+  // Reload whitelist from storage
+  const freshWhitelist = db.objectToMap(
+    db.loadData(config.database.ipWhitelistDb, {})
+  );
+  
+  // Validate and clean entries
+  let invalidEntries = 0;
+  
+  freshWhitelist.forEach((info, ip) => {
+    // Basic IP format validation (simple check)
+    if (!ip || !ip.match(/^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$/)) {
+      securityLog('warn', `Invalid IP format in whitelist`, { ip });
+      freshWhitelist.delete(ip);
+      invalidEntries++;
+      return;
+    }
+    
+    // Ensure all required fields exist
+    if (!info.reason) info.reason = 'No reason provided';
+    if (!info.addedBy) info.addedBy = 'unknown';
+    if (!info.whitelistedAt) info.whitelistedAt = new Date().toISOString();
+    
+    // Update the entry
+    freshWhitelist.set(ip, info);
+  });
+  
+  // If there were invalid entries, save the cleaned whitelist
+  if (invalidEntries > 0) {
+    securityLog('warn', `Removed ${invalidEntries} invalid whitelist entries during verification`);
+    db.saveData(config.database.ipWhitelistDb, db.mapToObject(freshWhitelist));
+  }
+  
+  // Update the active whitelist
+  ipWhitelist = freshWhitelist;
+  
+  securityLog('info', `Whitelist verification complete`, { 
+    count: ipWhitelist.size,
+    invalidRemoved: invalidEntries
+  });
+  
+  return ipWhitelist.size;
+}
 
 // Export security module functions
 module.exports = {
@@ -437,7 +740,16 @@ module.exports = {
   checkSuspiciousDataRate,
   logHeaders,
   trackConnectionBurst,
+  checkActiveAttack,
+  addTrustedActiveUser,
+  updateTrustedUserActivity,
+  isActiveTrustedUser,
+  isWhitelisted,
+  whitelistIP,
+  removeFromWhitelist,
+  getWhitelist: () => ipWhitelist,
   getBlacklist: () => ipBlacklist,
   getSecurityViolations: () => securityViolations,
-  getUserAgents: () => userAgents
+  getUserAgents: () => userAgents,
+  verifyWhitelist
 }; 

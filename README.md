@@ -24,6 +24,11 @@ A TCP tunneling proxy that routes clients to the appropriate Lavalink v3 or v4 s
   - Automatic temporary blocking for suspicious behavior
   - Recursive loop protection in security logging
   - Configurable thresholds and limits
+- Connection management:
+  - Automatic connection cleanup on restart
+  - Active user protection during DDoS attacks
+  - Never drops packets from active trusted users
+  - Whitelist verification and validation on startup
 
 ## How It Works
 
@@ -127,6 +132,7 @@ The proxy includes a web interface that provides real-time monitoring of:
 - **Security Dashboard** (`/security`):
   - Password-protected security controls
   - IP blacklist management with temporary or permanent bans
+  - IP whitelist management for trusted addresses
   - Security violation monitoring
   - User agent tracking
   - Manual IP blacklisting controls
@@ -202,6 +208,7 @@ The proxy can be configured entirely through environment variables:
 - `BACKEND_STATUS_DB`: Filename for backend status data (default: backend_status.json)
 - `SECURITY_LOG_DB`: Filename for security events (default: security_log.json)
 - `IP_BLACKLIST_DB`: Filename for IP blacklist (default: ip_blacklist.json)
+- `IP_WHITELIST_DB`: Filename for IP whitelist of trusted addresses (default: ip_whitelist.json)
 
 ### Rate Tracking Settings
 - `RATE_TRACKING_INTERVAL`: Interval in ms to update data rates (default: 5000)
@@ -209,7 +216,7 @@ The proxy can be configured entirely through environment variables:
 
 ### Security Settings
 - `MAX_CONNECTIONS_PER_IP`: Maximum allowed connections from a single IP (default: 10)
-- `MAX_CONNECTIONS_TOTAL`: Maximum allowed total connections (default: 100)
+- `MAX_CONNECTIONS_TOTAL`: Maximum allowed total connections (default: 100). Set to 'unlimited' for no limit.
 - `CONNECTION_RATE_LIMIT`: Maximum new connections per second per IP (default: 5)
 - `RATE_WINDOW_MS`: Time window for rate limiting in milliseconds (default: 10000)
 - `AUTO_BLACKLIST`: Whether to automatically blacklist IPs that violate security rules (default: false)
@@ -230,6 +237,10 @@ The proxy can be configured entirely through environment variables:
 - `TEMP_BLOCK_DURATION`: Duration in seconds for temporary blocks (default: 300)
 - `MAX_PAYLOAD_SIZE`: Maximum payload size in MB (default: 1)
 - `VALIDATE_WS_FRAMES`: Validate WebSocket frames for protocol compliance (default: true)
+- `AGGRESSIVE_PACKET_DROPPING`: Enable aggressive packet dropping to prevent TCP jamming (default: true)
+- `PACKET_DROP_DURATION`: Duration in seconds to drop packets after attack detection (default: 30)
+- `PROGRESSIVE_DROPPING`: Enable progressive packet dropping based on burst intensity (default: true)
+- `MIN_BURST_FOR_DROPPING`: Minimum burst count before starting progressive packet dropping (default: 2)
 
 ## How Version Detection Works
 
@@ -278,6 +289,19 @@ The proxy includes comprehensive security features:
 - Per-IP connection limits
 - Total connection limiting
 - Automatic or manual IP blacklisting
+- Permanent IP whitelisting for trusted addresses
+- Packet dropping for blacklisted IPs (connections and data packets)
+- Active user protection that ensures users who have successfully authenticated maintain connection during attacks:
+  - Trusted active users are automatically tracked after successful authentication
+  - Active users are exempt from blacklist checks once authenticated
+  - Active users never have their packets dropped during DDoS attacks
+  - Active users bypass rate limits and connection limits
+  - Activity tracking keeps user status current (10 minute activity window)
+- Connection database cleanup on server restart:
+  - All connection tracking is reset on restart to prevent stale connections
+  - Whitelist entries are verified on startup
+  - Invalid whitelist entries are automatically cleaned and reported
+- Anti-TCP jamming protection with progressive packet dropping
 - Security violation monitoring and logging
 - User agent tracking and analysis
 - Suspicious data rate detection
@@ -286,6 +310,11 @@ The proxy includes comprehensive security features:
 - Detailed security logging
 - DDoS protection mechanisms:
   - Connection burst detection and mitigation
+  - Active attack packet dropping (silently discards packets during attack)
+  - Progressive packet dropping based on attack intensity
+  - Trusted active user whitelisting during attacks
+  - Permanent IP whitelist that bypasses all packet dropping
+  - Prevention of TCP connection jamming during active attacks
   - Automatic temporary blocking for suspicious patterns
   - Payload size limiting to prevent resource exhaustion
   - Recursive logging protection to prevent stack overflows

@@ -35,7 +35,8 @@ const config = {
     ipUsageDb: process.env.IP_USAGE_DB || 'ip_usage.json',
     backendStatusDb: process.env.BACKEND_STATUS_DB || 'backend_status.json',
     securityLogDb: process.env.SECURITY_LOG_DB || 'security_log.json',
-    ipBlacklistDb: process.env.IP_BLACKLIST_DB || 'ip_blacklist.json'
+    ipBlacklistDb: process.env.IP_BLACKLIST_DB || 'ip_blacklist.json',
+    ipWhitelistDb: process.env.IP_WHITELIST_DB || 'ip_whitelist.json'
   },
   // Rate tracking configuration
   rateTracking: {
@@ -60,7 +61,7 @@ const config = {
   // Security configuration
   security: {
     maxConnectionsPerIP: parseInt(process.env.MAX_CONNECTIONS_PER_IP || '10', 10),
-    maxConnectionsTotal: parseInt(process.env.MAX_CONNECTIONS_TOTAL || '100', 10),
+    maxConnectionsTotal: process.env.MAX_CONNECTIONS_TOTAL === 'unlimited' ? Infinity : parseInt(process.env.MAX_CONNECTIONS_TOTAL || '100', 10),
     connectionRateLimit: parseInt(process.env.CONNECTION_RATE_LIMIT || '5', 10), // Connections per second
     rateWindowMs: parseInt(process.env.RATE_WINDOW_MS || '10000', 10), // 10 seconds window for rate limiting
     autoBlacklist: process.env.AUTO_BLACKLIST === 'true' || false,
@@ -81,7 +82,12 @@ const config = {
       burstResetMs: parseInt(process.env.BURST_RESET_MS || '5000', 10), // Time in ms to reset burst counter after normal behavior
       temporaryBlockDuration: parseInt(process.env.TEMP_BLOCK_DURATION || '300', 10) * 1000, // 5 minutes by default
       maxPayloadSize: parseInt(process.env.MAX_PAYLOAD_SIZE || '1', 10) * 1024 * 1024, // 1MB max payload size
-      validateWebSocketFrames: process.env.VALIDATE_WS_FRAMES === 'true'
+      validateWebSocketFrames: process.env.VALIDATE_WS_FRAMES === 'true',
+      // Advanced packet dropping options to prevent TCP jamming
+      aggressivePacketDropping: process.env.AGGRESSIVE_PACKET_DROPPING === 'true' || true, // Enable by default
+      packetDropDuration: parseInt(process.env.PACKET_DROP_DURATION || '30', 10) * 1000, // Duration to continue dropping packets
+      progressiveDropping: process.env.PROGRESSIVE_DROPPING === 'true' || true, // Progressive dropping based on burst intensity
+      minimumBurstForDropping: parseInt(process.env.MIN_BURST_FOR_DROPPING || '2', 10) // Start dropping packets after this many bursts
     }
   }
 };

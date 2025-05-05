@@ -238,6 +238,32 @@ function saveBackendStatus() {
   db.saveData(config.database.backendStatusDb, backendStatus);
 }
 
+// Clean up connection details on server restart
+log("Cleaning connection database on startup...");
+connectionDetails.clear();  // Clear all existing connections
+activeConnections = 0;      // Reset active connection counter
+saveConnectionData();       // Save the empty connection database
+log("Connection database cleared. Starting with 0 active connections.");
+
+// Verify whitelist entries
+log("Verifying IP whitelist...");
+const whitelist = db.objectToMap(
+  db.loadData(config.database.ipWhitelistDb, {})
+);
+
+// Log whitelist entries
+if (whitelist.size > 0) {
+  log(`Found ${whitelist.size} whitelisted IP(s):`);
+  whitelist.forEach((info, ip) => {
+    log(`- ${ip}: ${info.reason} (added by ${info.addedBy} on ${new Date(info.whitelistedAt).toLocaleString()})`);
+  });
+} else {
+  log("No whitelisted IPs found.");
+}
+
+// Ensure security module has the whitelist loaded
+security.verifyWhitelist();
+
 // Set up interval for data rate calculations
 setInterval(calculateDataRates, RATE_TRACKING_INTERVAL);
 
@@ -582,12 +608,30 @@ app.get('/api/security/check-auth', (req, res) => {
 // Security API endpoints
 app.get('/api/security', requireAuth, (req, res) => {
   const blacklist = [];
+  const whitelist = [];
   const violations = [];
   const userAgents = [];
   
   // Process blacklist
   security.getBlacklist().forEach((info, ip) => {
     blacklist.push({
+      ip,
+      ...info
+    });
+  });
+  
+  // Process whitelist
+  security.getWhitelist().forEach((info, ip) => {
+    // Ensure whitelistedAt is a proper ISO string
+    if (info.whitelistedAt && !(info.whitelistedAt instanceof Date) && typeof info.whitelistedAt === 'object') {
+      info.whitelistedAt = new Date(info.whitelistedAt).toISOString();
+    } else if (info.whitelistedAt && info.whitelistedAt instanceof Date) {
+      info.whitelistedAt = info.whitelistedAt.toISOString();
+    } else if (!info.whitelistedAt) {
+      info.whitelistedAt = new Date().toISOString();
+    }
+    
+    whitelist.push({
       ip,
       ...info
     });
@@ -620,9 +664,11 @@ app.get('/api/security', requireAuth, (req, res) => {
   
   res.json({
     blacklistedIPs: blacklist.length,
+    whitelistedIPs: whitelist.length,
     totalViolations: violations.length,
     userAgentsCount: userAgents.length,
     blacklist,
+    whitelist,
     violations,
     userAgents
   });
@@ -670,6 +716,122 @@ app.post('/api/security/unblacklist', requireAuth, (req, res) => {
   }
 });
 
+// Add IP to whitelist
+app.post('/api/security/whitelist', requireAuth, (req, res) => {
+  const { ip, reason } = req.body;
+  
+  if (!ip) {
+    return res.status(400).json({ message: 'IP address is required' });
+  }
+  
+  try {
+    security.whitelistIP(ip, reason || 'Manual whitelist', req.ip);
+    res.json({ message: `IP ${ip} has been whitelisted` });
+  } catch (error) {
+    logError(`Error whitelisting IP ${ip}`, error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Remove IP from whitelist
+app.post('/api/security/unwhitelist', requireAuth, (req, res) => {
+  const { ip } = req.body;
+  
+  if (!ip) {
+    return res.status(400).json({ message: 'IP address is required' });
+  }
+  
+  try {
+    if (security.removeFromWhitelist(ip)) {
+      res.json({ message: `IP ${ip} has been removed from whitelist` });
+    } else {
+      res.status(404).json({ message: `IP ${ip} is not whitelisted` });
+    }
+  } catch (error) {
+    logError(`Error removing IP ${ip} from whitelist`, error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+// Get whitelist
+app.get('/api/security/whitelist', requireAuth, (req, res) => {
+  try {
+    const whitelist = [];
+    security.getWhitelist().forEach((info, ip) => {
+      // Ensure whitelistedAt is a proper ISO string
+      if (info.whitelistedAt && !(info.whitelistedAt instanceof Date) && typeof info.whitelistedAt === 'object') {
+        info.whitelistedAt = new Date(info.whitelistedAt).toISOString();
+      } else if (info.whitelistedAt && info.whitelistedAt instanceof Date) {
+        info.whitelistedAt = info.whitelistedAt.toISOString();
+      } else if (!info.whitelistedAt) {
+        info.whitelistedAt = new Date().toISOString();
+      }
+      
+      whitelist.push({
+        ip,
+        ...info
+      });
+    });
+    
+    console.log("Whitelist API response:", whitelist);
+    res.json({ whitelist });
+  } catch (error) {
+    logError('Error fetching whitelist', error);
+    res.status(500).json({ message: error.message });
+  }
+});
+
+/**
+ * Parse PROXY protocol header
+ * PROXY protocol format: "PROXY" + TCP4/TCP6 + client-ip + proxy-ip + client-port + proxy-port + CRLF
+ * @param {Buffer} data - Buffer containing potential PROXY protocol header
+ * @returns {Object} Parsed proxy information
+ */
+function parseProxyProtocol(data) {
+  // Check for PROXY protocol signature
+  const dataStr = data.toString('utf8', 0, Math.min(data.length, 108)); // Max PROXY header is 107 bytes
+  
+  if (!dataStr.startsWith('PROXY ')) {
+    return { isProxy: false };
+  }
+  
+  try {
+    // Extract parts from PROXY protocol line
+    const endOfLine = dataStr.indexOf('\r\n');
+    if (endOfLine === -1) {
+      return { isProxy: true, complete: false }; // Incomplete header
+    }
+    
+    const parts = dataStr.substring(0, endOfLine).split(' ');
+    
+    if (parts.length < 6) {
+      log(`Invalid PROXY protocol header format`);
+      return { isProxy: false };
+    }
+    
+    const [, proto, srcIp, destIp, srcPort, destPort] = parts;
+    
+    if (proto !== 'TCP4' && proto !== 'TCP6') {
+      log(`Unsupported PROXY protocol: ${proto}`);
+      return { isProxy: false };
+    }
+    
+    log(`Detected PROXY protocol: ${srcIp}:${srcPort} via ${destIp}:${destPort}`);
+    
+    // Return parsed information with remaining data
+    return {
+      isProxy: true,
+      complete: true,
+      originalIp: srcIp,
+      originalPort: parseInt(srcPort, 10),
+      remainingData: data.slice(endOfLine + 2) // +2 for CRLF
+    };
+  } catch (err) {
+    logError(`Error parsing PROXY protocol: ${err.message}`, err);
+    return { isProxy: false };
+  }
+}
+
 // Start the HTTP server
 const httpServer = http.createServer(app);
 httpServer.listen(config.proxy.webPort, config.proxy.host, () => {
@@ -694,63 +856,22 @@ const server = net.createServer((clientSocket) => {
   log(`New connection from ${clientAddress} (ID: ${clientId})`);
   security.securityLog('info', `New connection`, { ip: clientIp, id: clientId });
   
-  // Check for connection bursts (potential DDoS)
-  if (security.trackConnectionBurst(clientIp)) {
+  // Update activity for trusted users if they attempt a new connection
+  security.updateTrustedUserActivity(clientIp);
+  
+  // First check if this IP is whitelisted - whitelisted IPs bypass all security checks
+  const isWhitelisted = security.isWhitelisted(clientIp);
+  
+  // Check for connection bursts (potential DDoS), but allow whitelisted IPs and active trusted users
+  if (!isWhitelisted && !security.isActiveTrustedUser(clientIp) && security.trackConnectionBurst(clientIp)) {
     security.securityLog('warn', `Rejected connection due to burst pattern detection`, { ip: clientIp, id: clientId });
     clientSocket.end();
     return;
   }
   
-  // Function to parse PROXY protocol header
-  // PROXY protocol format: "PROXY" + TCP4/TCP6 + client-ip + proxy-ip + client-port + proxy-port + CRLF
-  function parseProxyProtocol(data) {
-    // Check for PROXY protocol signature
-    const dataStr = data.toString('utf8', 0, Math.min(data.length, 108)); // Max PROXY header is 107 bytes
-    
-    if (!dataStr.startsWith('PROXY ')) {
-      return { isProxy: false };
-    }
-    
-    try {
-      // Extract parts from PROXY protocol line
-      const endOfLine = dataStr.indexOf('\r\n');
-      if (endOfLine === -1) {
-        return { isProxy: true, complete: false }; // Incomplete header
-      }
-      
-      const parts = dataStr.substring(0, endOfLine).split(' ');
-      
-      if (parts.length < 6) {
-        log(`Invalid PROXY protocol header format`);
-        return { isProxy: false };
-      }
-      
-      const [, proto, srcIp, destIp, srcPort, destPort] = parts;
-      
-      if (proto !== 'TCP4' && proto !== 'TCP6') {
-        log(`Unsupported PROXY protocol: ${proto}`);
-        return { isProxy: false };
-      }
-      
-      log(`Detected PROXY protocol: ${srcIp}:${srcPort} via ${destIp}:${destPort}`);
-      
-      // Return parsed information with remaining data
-      return {
-        isProxy: true,
-        complete: true,
-        originalIp: srcIp,
-        originalPort: parseInt(srcPort, 10),
-        remainingData: data.slice(endOfLine + 2) // +2 for CRLF
-      };
-    } catch (err) {
-      logError(`Error parsing PROXY protocol: ${err.message}`, err);
-      return { isProxy: false };
-    }
-  }
-  
   // Check if IP is blacklisted
   const blacklistInfo = security.checkIPBlacklist(clientIp);
-  if (blacklistInfo) {
+  if (blacklistInfo && !isWhitelisted && !security.isActiveTrustedUser(clientIp)) {
     security.securityLog('warn', `Rejected blacklisted IP connection`, { 
       ip: clientIp, 
       id: clientId,
@@ -761,8 +882,8 @@ const server = net.createServer((clientSocket) => {
     return;
   }
   
-  // Check connection rate limit
-  if (security.checkRateLimit(clientIp)) {
+  // Check connection rate limit for non-whitelisted and non-trusted users
+  if (!isWhitelisted && !security.isActiveTrustedUser(clientIp) && security.checkRateLimit(clientIp)) {
     security.securityLog('warn', `Rejected rate-limited IP connection`, { ip: clientIp, id: clientId });
     clientSocket.end();
     return;
@@ -772,8 +893,8 @@ const server = net.createServer((clientSocket) => {
   const ipConnections = Array.from(connectionDetails.values())
     .filter(conn => conn.clientIp === clientIp).length;
   
-  // Check connection limits
-  if (!security.checkConnectionLimits(clientIp, activeConnections, ipConnections)) {
+  // Check connection limits for non-whitelisted and non-trusted users
+  if (!isWhitelisted && !security.isActiveTrustedUser(clientIp) && !security.checkConnectionLimits(clientIp, activeConnections, ipConnections)) {
     clientSocket.end();
     return;
   }
@@ -802,6 +923,42 @@ const server = net.createServer((clientSocket) => {
   
   // Handle data from client
   clientSocket.on('data', (data) => {
+    // Check if the IP is whitelisted - whitelisted IPs bypass all security checks
+    const isDataWhitelisted = security.isWhitelisted(clientIp);
+    
+    // Check if the IP has been blacklisted since connection establishment
+    const blacklistInfo = security.checkIPBlacklist(clientIp);
+    if (blacklistInfo && !isDataWhitelisted && !security.isActiveTrustedUser(clientIp)) {
+      security.securityLog('warn', `Dropping packet from blacklisted IP`, { 
+        ip: clientIp, 
+        id: clientId,
+        reason: blacklistInfo.reason,
+        packetSize: data.length
+      });
+      
+      // Close the connection to prevent further packets
+      clientSocket.end();
+      return;
+    }
+    
+    // Update activity timestamp for trusted users
+    security.updateTrustedUserActivity(clientIp);
+    
+    // Skip packet dropping for whitelisted IPs and active trusted users
+    if (!isDataWhitelisted && !security.isActiveTrustedUser(clientIp)) {
+      // Check if IP is under active DDoS attack
+      if (security.checkActiveAttack(clientIp)) {
+        security.securityLog('warn', `Dropping packet from IP under DDoS pattern`, { 
+          ip: clientIp, 
+          id: clientId,
+          packetSize: data.length
+        });
+        
+        // Don't close the connection yet, just drop the packet
+        return;
+      }
+    }
+    
     // Check for PROXY protocol header on first data packet
     if (!proxyProtocolComplete && buffer.length === 0) {
       // Only process PROXY protocol if it's enabled in config
@@ -828,9 +985,12 @@ const server = net.createServer((clientSocket) => {
           // Replace data with remaining data after PROXY header
           data = proxyResult.remainingData;
           
+          // Re-check if the IP is whitelisted after we got the real IP
+          const isProxyWhitelisted = security.isWhitelisted(clientIp);
+          
           // Check if the original IP is blacklisted
           const blacklistInfo = security.checkIPBlacklist(clientIp);
-          if (blacklistInfo) {
+          if (blacklistInfo && !isProxyWhitelisted && !security.isActiveTrustedUser(clientIp)) {
             security.securityLog('warn', `Rejected blacklisted IP connection (via PROXY)`, { 
               ip: clientIp, 
               id: clientId,
@@ -853,7 +1013,7 @@ const server = net.createServer((clientSocket) => {
     // Check payload size limits
     if (config.security.ddosProtection && config.security.ddosProtection.enabled) {
       const maxSize = config.security.ddosProtection.maxPayloadSize;
-      if (buffer.length + data.length > maxSize) {
+      if (!isDataWhitelisted && !security.isActiveTrustedUser(clientIp) && buffer.length + data.length > maxSize) {
         security.securityLog('warn', `Payload size exceeded for IP ${clientIp}`, { 
           ip: clientIp, 
           id: clientId,
@@ -950,6 +1110,9 @@ const server = net.createServer((clientSocket) => {
       authenticated = true;
       log(`Client authenticated, establishing tunnel to ${version} backend`);
       security.securityLog('info', `Client authenticated`, { ip: clientIp, id: clientId, version });
+      
+      // Add this IP to trusted active users since they've successfully authenticated
+      security.addTrustedActiveUser(clientIp);
     }
     
     // Create connection to backend
@@ -990,6 +1153,44 @@ const server = net.createServer((clientSocket) => {
     
     // Handle data flowing between pipes
     backendSocket.on('data', (data) => {
+      // Check if the IP is whitelisted - whitelisted IPs bypass all security checks
+      const isBackendWhitelisted = security.isWhitelisted(clientIp);
+      
+      // Check if the IP has been blacklisted since connection establishment
+      const blacklistInfo = security.checkIPBlacklist(clientIp);
+      if (blacklistInfo && !isBackendWhitelisted && !security.isActiveTrustedUser(clientIp)) {
+        security.securityLog('warn', `Dropping response packet to blacklisted IP`, { 
+          ip: clientIp, 
+          id: clientId,
+          reason: blacklistInfo.reason,
+          packetSize: data.length
+        });
+        
+        // Close the connection to prevent further packets
+        if (!clientSocket.destroyed) {
+          clientSocket.end();
+        }
+        return;
+      }
+      
+      // Update activity timestamp for trusted users
+      security.updateTrustedUserActivity(clientIp);
+      
+      // Skip packet dropping checks for whitelisted IPs and active trusted users
+      if (!isBackendWhitelisted && !security.isActiveTrustedUser(clientIp)) {
+        // Check if IP is under active DDoS attack
+        if (security.checkActiveAttack(clientIp)) {
+          security.securityLog('warn', `Dropping response packet to IP under DDoS pattern`, { 
+            ip: clientIp, 
+            id: clientId,
+            packetSize: data.length
+          });
+          
+          // Don't close the connection yet, just drop the packet
+          return;
+        }
+      }
+      
       bytesToClient += data.length;
       
       // Update connection details
